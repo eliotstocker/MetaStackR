@@ -1,0 +1,207 @@
+package worker
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"metastackr/internal/dag"
+	"metastackr/internal/db"
+	"metastackr/internal/server"
+)
+
+type ChildMerger interface {
+	MergePR(ctx context.Context, repo string, prNumber int) (mergedSHA string, err error)
+}
+
+type MockMerger struct {
+	FailOnPRs map[int]string // PRNumber -> error message
+}
+
+func (m *MockMerger) MergePR(ctx context.Context, repo string, prNumber int) (string, error) {
+	if errMsg, fail := m.FailOnPRs[prNumber]; fail {
+		return "", fmt.Errorf("merge conflict in %s PR #%d: %s", repo, prNumber, errMsg)
+	}
+	return fmt.Sprintf("sha-%s-%d", repo, prNumber), nil
+}
+
+type Engine struct {
+	repo   *db.Repository
+	gh     *server.GitHubClient
+	merger ChildMerger
+}
+
+func NewEngine(repo *db.Repository, gh *server.GitHubClient, merger ChildMerger) *Engine {
+	if merger == nil {
+		merger = &MockMerger{}
+	}
+	return &Engine{
+		repo:   repo,
+		gh:     gh,
+		merger: merger,
+	}
+}
+
+func (e *Engine) StartReconciliationLoop(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := e.ReconcileAllPending(ctx); err != nil {
+				log.Printf("[worker] error during reconciliation: %v", err)
+			}
+		}
+	}
+}
+
+func (e *Engine) ReconcileAllPending(ctx context.Context) error {
+	pending, err := e.repo.GetPendingReconcileMetaPRs(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, metaPR := range pending {
+		if err := e.ExecuteCascadeMerge(ctx, metaPR.ID); err != nil {
+			log.Printf("[worker] cascade merge failed for Meta PR %s: %v", metaPR.ID, err)
+		}
+	}
+
+	return nil
+}
+
+func (e *Engine) ExecuteCascadeMerge(ctx context.Context, metaPRID uuid.UUID) error {
+	metaPR, err := e.repo.GetMetaPRByID(ctx, metaPRID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch meta PR: %w", err)
+	}
+
+	if metaPR.Status != "MERGING" {
+		err := e.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "MERGING", metaPR.LockVersion)
+		if err != nil {
+			return fmt.Errorf("optimistic locking failed on Meta PR %s: %w", metaPR.ID, err)
+		}
+		metaPR.LockVersion++
+		metaPR.Status = "MERGING"
+	}
+
+	e.repo.CreateMergeAuditLog(ctx, metaPR.ID, "CASCADE_MERGE_STARTED", metaPR)
+
+	g := dag.NewGraph()
+	childMap := make(map[string]db.ChildPR)
+	for _, child := range metaPR.ChildPRs {
+		idStr := child.ID.String()
+		g.AddNode(idStr, child)
+		childMap[idStr] = child
+	}
+
+	deps, err := e.repo.GetChildPRDependencies(ctx, metaPR.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get child PR dependencies: %w", err)
+	}
+
+	for _, dep := range deps {
+		g.AddDependency(dep.ParentChildPRID.String(), dep.DependentChildPRID.String())
+	}
+
+	batches, err := g.TopologicalSort()
+	if err != nil {
+		e.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "FAILED", metaPR.LockVersion)
+		e.repo.CreateMergeAuditLog(ctx, metaPR.ID, "CYCLE_DETECTED", map[string]string{"error": err.Error()})
+		return fmt.Errorf("aborting cascade merge due to cycle: %w", err)
+	}
+
+	for batchIdx, batch := range batches {
+		log.Printf("[worker] executing batch %d with %d PRs", batchIdx, len(batch))
+
+		type mergeResult struct {
+			childID   uuid.UUID
+			mergedSHA string
+			err       error
+		}
+
+		resChan := make(chan mergeResult, len(batch))
+		var wg sync.WaitGroup
+
+		for _, childIDStr := range batch {
+			child := childMap[childIDStr]
+
+			if child.Status == "MERGED" {
+				log.Printf("[worker] skipping child PR %s (#%d) - already merged", child.RepoFullName, child.PRNumber)
+				continue
+			}
+
+			wg.Add(1)
+			go func(c db.ChildPR) {
+				defer wg.Done()
+				_ = e.repo.UpdateChildPRStatus(ctx, c.ID, "MERGING", c.HeadSHA)
+				sha, err := e.merger.MergePR(ctx, c.RepoFullName, c.PRNumber)
+				resChan <- mergeResult{childID: c.ID, mergedSHA: sha, err: err}
+			}(child)
+		}
+
+		wg.Wait()
+		close(resChan)
+
+		var batchErr error
+		for res := range resChan {
+			if res.err != nil {
+				batchErr = res.err
+				_ = e.repo.UpdateChildPRStatus(ctx, res.childID, "FAILED", "")
+			} else {
+				_ = e.repo.UpdateChildPRStatus(ctx, res.childID, "MERGED", res.mergedSHA)
+			}
+		}
+
+		if batchErr != nil {
+			log.Printf("[worker] batch %d failed: %v", batchIdx, batchErr)
+			_ = e.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "FAILED_PARTIAL", metaPR.LockVersion)
+			_ = e.repo.CreateMergeAuditLog(ctx, metaPR.ID, "CHILD_MERGE_FAILED", map[string]string{
+				"batch_index": fmt.Sprintf("%d", batchIdx),
+				"error":       batchErr.Error(),
+			})
+			return fmt.Errorf("cascade merge halted on partial failure: %w", batchErr)
+		}
+	}
+
+	_ = e.repo.CreateMergeAuditLog(ctx, metaPR.ID, "SUBMODULE_POINTERS_BUMPED", map[string]string{"status": "success"})
+
+	// Look up the name of the meta repo and privacy settings
+	query := `
+		SELECT repo_full_name, allow_code_pull 
+		FROM tracked_meta_repos 
+		WHERE id = $1
+	`
+	var metaRepoName string
+	var allowCodePull bool
+	err = e.repo.DB().QueryRowContext(ctx, query, metaPR.MetaRepoID).Scan(&metaRepoName, &allowCodePull)
+	if err != nil {
+		metaRepoName = "meta-repo"
+		allowCodePull = false
+	}
+
+	// Privacy Guardrail: Ensure code pulls are strictly opt-in
+	requiresLocalClone := false // Cascades merge is metadata-only by default
+	if requiresLocalClone && !allowCodePull {
+		return fmt.Errorf("security block: Cascade Merge requires local git clone, but allow_code_pull is disabled")
+	}
+
+	rootSHA, err := e.merger.MergePR(ctx, metaRepoName, metaPR.PRNumber)
+	if err != nil {
+		_ = e.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "FAILED_PARTIAL", metaPR.LockVersion)
+		_ = e.repo.CreateMergeAuditLog(ctx, metaPR.ID, "ROOT_META_PR_MERGE_FAILED", map[string]string{"error": err.Error()})
+		return fmt.Errorf("failed to merge root meta PR: %w", err)
+	}
+
+	_ = e.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "MERGED", metaPR.LockVersion)
+	_ = e.repo.CreateMergeAuditLog(ctx, metaPR.ID, "CASCADE_MERGE_COMPLETED", map[string]string{"root_sha": rootSHA})
+
+	log.Printf("[worker] Meta PR %d merged successfully!", metaPR.PRNumber)
+	return nil
+}

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Skip guardrail if git-meta is installed
+if command -v git-meta &> /dev/null; then
+    exit 0
+fi
+
+# Allow explicit bypass flag
+for arg in "$@"; do
+    if [ "$arg" == "--allow" ] || [ "$META_ALLOW" == "1" ]; then
+        exit 0
+    fi
+done
+
+echo "🛑 PUSH BLOCKED: MetaStackr CLI Required"
+echo "Direct 'git push' without local tooling risks pushing unlinked submodule SHAs."
+echo ""
+echo "Options:"
+echo "  1. Install CLI:  brew install metastackr/tap/git-meta"
+echo "  2. Bypass:       META_ALLOW=1 git push origin <branch>"
+exit 1

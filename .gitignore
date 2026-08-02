@@ -1,0 +1,16 @@
+# Binaries
+git-meta
+metastackrd
+bootstrap
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+bootstrap.zip
+
+# IDEs and local files
+.DS_Store
+.idea/
+.vscode/
+*.log

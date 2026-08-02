@@ -1,0 +1,21 @@
+<idea-plugin>
+    <id>com.metastackr.plugin</id>
+    <name>MetaStackr</name>
+    <vendor email="support@metastackr.com" url="https://metastackr.com">MetaStackr</vendor>
+
+    <description><![CDATA[
+    Meta-Repo orchestration tools. Intercepts commit actions to prompt coordinated git-meta commits.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>Git4Idea</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <checkinHandlerFactory implementation="com.metastackr.plugin.MetaCheckinHandlerFactory"/>
+    </extensions>
+
+    <projectListeners>
+        <listener class="com.metastackr.plugin.MetaVCSListener"
+                  topic="git4idea.repo.GitRepositoryChangeListener"/>
+    </projectListeners>
+</idea-plugin>

@@ -1,0 +1,49 @@
+{
+  "name": "metastackr-vscode",
+  "displayName": "MetaStackr",
+  "description": "Unified VS Code Source Control Manager (SCM) for Git submodules.",
+  "version": "1.0.0",
+  "publisher": "eliotstocker",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "metastackr.commit",
+        "title": "MetaStackr: Atomic Commit"
+      },
+      {
+        "command": "metastackr.checkout",
+        "title": "MetaStackr: Checkout Branch"
+      },
+      {
+        "command": "metastackr.sync",
+        "title": "MetaStackr: Sync Submodules"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "metastackr.commit",
+          "when": "config.metastackr.enabled"
+        },
+        {
+          "command": "metastackr.checkout",
+          "when": "config.metastackr.enabled"
+        },
+        {
+          "command": "metastackr.sync",
+          "when": "config.metastackr.enabled"
+        }
+      ]
+    }
+  }
+}

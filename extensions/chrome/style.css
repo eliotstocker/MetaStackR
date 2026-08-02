@@ -1,0 +1,163 @@
+#metastackr-header-banner {
+  background: #0A0E0C;
+  border: 1px solid rgba(250, 204, 21, 0.25);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  color: #F4F7F5;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.metastackr-banner-inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+}
+
+.metastackr-logo {
+  font-weight: bold;
+  color: #00FF88;
+  text-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+}
+
+.metastackr-status {
+  flex-grow: 1;
+}
+
+.metastackr-status strong {
+  color: #FACC15;
+}
+
+.metastackr-meta {
+  font-size: 0.85em;
+  color: #A0B2A6;
+}
+
+/* Submodules Panel Grid */
+.metastackr-panel {
+  background: #101612;
+  border: 1px solid rgba(250, 204, 21, 0.15);
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+  color: #F4F7F5;
+}
+
+.metastackr-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(250, 204, 21, 0.1);
+  padding-bottom: 12px;
+}
+
+.metastackr-panel-header h3 {
+  margin: 0;
+  color: #00FF88;
+}
+
+.metastackr-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metastackr-grid-header,
+.metastackr-grid-row {
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr 1fr 1fr;
+  padding: 10px 12px;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.metastackr-grid-header {
+  font-weight: bold;
+  color: #A0B2A6;
+  border-bottom: 2px solid rgba(250, 204, 21, 0.15);
+}
+
+.metastackr-grid-row {
+  background: #0A0E0C;
+  border: 1px solid rgba(250, 204, 21, 0.05);
+}
+
+.metastackr-grid-row:hover {
+  border-color: rgba(0, 255, 136, 0.3);
+}
+
+.metastackr-grid-row code {
+  background: #070A08;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #FACC15;
+}
+
+.metastackr-grid-row a {
+  color: #00FF88;
+  text-decoration: none;
+}
+
+.metastackr-grid-row a:hover {
+  text-decoration: underline;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: bold;
+  text-align: center;
+}
+
+.state-merged {
+  background: rgba(4, 181, 117, 0.15);
+  color: #04B575;
+  border: 1px solid #04B575;
+}
+
+.state-open {
+  background: rgba(250, 204, 21, 0.15);
+  color: #FACC15;
+  border: 1px solid #FACC15;
+}
+
+.state-failed {
+  background: rgba(255, 70, 114, 0.15);
+  color: #FF4672;
+  border: 1px solid #FF4672;
+}
+
+/* Sidebar Item */
+#metastackr-sidebar-card {
+  border: 1px solid rgba(250, 204, 21, 0.15);
+  border-radius: 8px;
+  background: #101612;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.metastackr-sidebar-header {
+  font-weight: bold;
+  border-bottom: 1px solid rgba(250, 204, 21, 0.1);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.metastackr-sidebar-logo {
+  color: #00FF88;
+  font-weight: bold;
+}
+
+.metastackr-sidebar-body p {
+  font-size: 0.85em;
+  color: #A0B2A6;
+  margin-bottom: 12px;
+}

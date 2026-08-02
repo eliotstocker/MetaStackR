@@ -1,0 +1,53 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+      - 'cmd/metastackrd/**'
+      - 'internal/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build & Apply Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Compile Lambda Code
+        run: |
+          echo "🚀 Compiling metastackrd for AWS Lambda (ARM64)..."
+          GOOS=linux GOARCH=arm64 go build -o bootstrap ./cmd/metastackrd
+          echo "📦 Packaging bootstrap.zip..."
+          zip -q bootstrap.zip bootstrap
+          mv bootstrap.zip terraform/
+        working-directory: .
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: terraform
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -var="database_url=${{ secrets.DATABASE_URL }}"
+        working-directory: terraform
