@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/eliotstocker/MetaStackR/compare/v1.1.0...v1.1.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **server:** log signature mismatch warning instead of dropping webhooks with 401 ([6a7587a](https://github.com/eliotstocker/MetaStackR/commit/6a7587a8a2643c5e5f56d8b94b13e6ed7b793459))
+
 # [1.1.0](https://github.com/eliotstocker/MetaStackR/compare/v1.0.1...v1.1.0) (2026-08-04)
 
 
