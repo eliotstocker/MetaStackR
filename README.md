@@ -10,10 +10,17 @@ It enables developers to work transparently across a root meta-repository contai
 
 - **Standardized Local Workflow (`git-meta`)**:
   - `git meta status`: Interrogates local submodule drift (uncommitted changes, unpushed commits) merged with live remote PR/CI status via terminal tables.
-  - `git meta checkout <branch>`: Safely creates or switches branches across parent meta-repo and all submodules.
+  - `git meta checkout [-b] <branch>`: Safely creates or switches branches across parent meta-repo and all submodules.
+  - `git meta commit -m "<msg>"`: Creates coordinated atomic commits across all modified submodules and updates parent commit pointers.
   - `git meta push`: Enforces bottom-up pushing (pushes submodule origins before parent commit pointers).
-  - `git meta retry-merge`: Re-triggers cascade merges on partially failed PRs.
+  - `git meta sync`: Fetches `origin/main`, fast-forwards/rebases local submodules, and aligns root pointers.
+  - `git meta rebase <upstream>`: Conducts a two-phase rebase: rebases child submodules first, then parent meta-repo references.
+  - `git meta retry-merge --pr <pr-number>`: Re-triggers cascade merges on partially failed PRs.
   - `git meta install-hooks`: Installs `post-checkout` and `pre-commit` hooks into `.git/hooks`.
+  - `git meta init`: Onboards repository with backend registration, Git hooks installation, and GitHub webhooks setup.
+  - `git meta setup-webhook`: Automates repository webhook registration with GitHub.
+  - `git meta agents`: Displays guidelines and machine-readable instructions for AI agents.
+  - `git meta version`: Displays semantic version information.
 
 - **Event-Driven Orchestration Daemon (`metastackrd`)**:
   - **Webhook Ingestion**: HMAC-SHA256 signature verification (`X-Hub-Signature-256`) processing `pull_request`, `pull_request_review`, `check_run`, and `workflow_run` events.
@@ -39,11 +46,20 @@ To enable server-side code access, toggle `allow_code_pull` to `true` in your re
 
 ## Quick Start
 
-### 1. Build & Install CLI
+### 1. Install CLI (`git-meta`)
+
+**One-Line Installation Script (macOS / Linux):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/eliotstocker/MetaStackR/main/install.sh | bash
+```
+
+**Or Build & Install from Source:**
 
 ```bash
 make build
 make install # Installs git-meta to /usr/local/bin/git-meta
+make build-extensions # (Optional) Package Chrome, VS Code, & JetBrains extensions
 ```
 
 Now `git meta` works natively in your terminal!
@@ -89,6 +105,21 @@ The daemon will automatically execute embedded database migrations on startup an
 │                                        └─────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Multi-Component Semantic Release
+
+MetaStackr uses independent per-component Semantic Release workflows based on conventional commit scopes:
+
+| Component | Scope Format | Tag Format | Artifacts |
+|---|---|---|---|
+| **Core (`git-meta` & `metastackrd`)** | `feat(core): ...`, `fix(cli): ...`, `fix(daemon): ...` (or unscoped) | `v1.x.x` | `git-meta`, `metastackrd` |
+| **VS Code Extension** | `feat(vscode): ...`, `fix(vscode): ...` | `vscode-v1.x.x` | `metastackr-vscode.vsix` |
+| **Chrome Extension** | `feat(chrome): ...`, `fix(chrome): ...` | `chrome-v1.x.x` | `metastackr-chrome.zip` |
+| **JetBrains Plugin** | `feat(jetbrains): ...`, `fix(jetbrains): ...` | `jetbrains-v1.x.x` | `metastackr-jetbrains.zip` |
+
+To trigger a release for a specific component, prefix your commit message with the corresponding scope.
 
 ---
 

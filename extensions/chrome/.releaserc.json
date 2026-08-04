@@ -1,0 +1,62 @@
+{
+  "branches": ["main"],
+  "tagFormat": "chrome-v${version}",
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "angular",
+        "releaseRules": [
+          { "scope": "core", "release": false },
+          { "scope": "cli", "release": false },
+          { "scope": "daemon", "release": false },
+          { "scope": "vscode", "release": false },
+          { "scope": "jetbrains", "release": false },
+          { "scope": "web", "release": false },
+          { "scope": "chrome", "type": "feat", "release": "minor" },
+          { "scope": "chrome", "type": "fix", "release": "patch" },
+          { "scope": "chrome", "type": "perf", "release": "patch" },
+          { "scope": "chrome", "type": "refactor", "release": "patch" },
+          { "scope": "chrome", "breaking": true, "release": "major" },
+          { "scope": "chrome", "release": "patch" }
+        ]
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "angular"
+      }
+    ],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "extensions/chrome/CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "node -e 'const fs=require(\"fs\"); const p=\"extensions/chrome/manifest.json\"; const m=JSON.parse(fs.readFileSync(p)); m.version=\"${nextRelease.version}\"; fs.writeFileSync(p, JSON.stringify(m, null, 2)+\"\\n\");' && cd extensions/chrome && zip -r ../../metastackr-chrome.zip . -x \"*.DS_Store\""
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "extensions/chrome/manifest.json",
+          "extensions/chrome/CHANGELOG.md"
+        ],
+        "message": "chore(release): chrome extension v${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          { "path": "metastackr-chrome.zip", "label": "MetaStackr Chrome Extension (.zip)" }
+        ]
+      }
+    ]
+  ]
+}

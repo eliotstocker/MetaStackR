@@ -1,0 +1,24 @@
+{
+  "name": "metastackr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MetaStackr multi-repo orchestration system and extensions",
+  "scripts": {
+    "release": "semantic-release",
+    "release:cli": "semantic-release --config .releaserc.json",
+    "release:vscode": "semantic-release --config extensions/vscode/.releaserc.json",
+    "release:chrome": "semantic-release --config extensions/chrome/.releaserc.json",
+    "release:jetbrains": "semantic-release --config extensions/jetbrains/.releaserc.json",
+    "release:all": "npm run release:cli && npm run release:vscode && npm run release:chrome && npm run release:jetbrains"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.0",
+    "@semantic-release/exec": "^7.0.0",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^11.0.0",
+    "@semantic-release/npm": "^12.0.0",
+    "@semantic-release/release-notes-generator": "^14.0.0",
+    "semantic-release": "^24.0.0"
+  }
+}

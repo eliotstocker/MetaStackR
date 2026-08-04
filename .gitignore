@@ -1,13 +1,25 @@
 # Binaries
 git-meta
+git-meta-*
 metastackrd
+metastackrd-*
 bootstrap
+dist/
 
 # Terraform
 .terraform/
 *.tfstate
 *.tfstate.backup
 bootstrap.zip
+
+# Node dependencies
+node_modules/
+package-lock.json
+
+# Built packages & zips
+metastackr-chrome.zip
+metastackr-vscode.vsix
+extensions/jetbrains/build/
 
 # IDEs and local files
 .DS_Store

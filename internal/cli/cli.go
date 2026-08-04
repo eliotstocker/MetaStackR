@@ -65,8 +65,9 @@ func printJSON(success bool, message string, data interface{}) {
 
 func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:   "git-meta",
-		Short: "MetaStackR CLI for Git submodules and PR synchronization",
+		Use:     "git-meta",
+		Short:   "MetaStackR CLI for Git submodules and PR synchronization",
+		Version: Version,
 	}
 
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output machine-readable JSON")
@@ -82,6 +83,7 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newAgentsCmd())
 	rootCmd.AddCommand(newSetupWebhookCmd())
 	rootCmd.AddCommand(newInitCmd())
+	rootCmd.AddCommand(newVersionCmd())
 
 	return rootCmd
 }

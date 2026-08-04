@@ -1,0 +1,69 @@
+{
+  "branches": ["main"],
+  "tagFormat": "vscode-v${version}",
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "angular",
+        "releaseRules": [
+          { "scope": "core", "release": false },
+          { "scope": "cli", "release": false },
+          { "scope": "daemon", "release": false },
+          { "scope": "chrome", "release": false },
+          { "scope": "jetbrains", "release": false },
+          { "scope": "web", "release": false },
+          { "scope": "vscode", "type": "feat", "release": "minor" },
+          { "scope": "vscode", "type": "fix", "release": "patch" },
+          { "scope": "vscode", "type": "perf", "release": "patch" },
+          { "scope": "vscode", "type": "refactor", "release": "patch" },
+          { "scope": "vscode", "breaking": true, "release": "major" },
+          { "scope": "vscode", "release": "patch" }
+        ]
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "angular"
+      }
+    ],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "extensions/vscode/CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/npm",
+      {
+        "pkgRoot": "extensions/vscode",
+        "npmPublish": false
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "cd extensions/vscode && npx -y @vscode/vsce package -o ../../metastackr-vscode.vsix"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "extensions/vscode/package.json",
+          "extensions/vscode/CHANGELOG.md"
+        ],
+        "message": "chore(release): vscode extension v${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          { "path": "metastackr-vscode.vsix", "label": "MetaStackr VS Code Extension (.vsix)" }
+        ]
+      }
+    ]
+  ]
+}

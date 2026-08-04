@@ -10,15 +10,26 @@ Welcome to the **MetaStackr User Guide**. This document provides end-to-end inst
 2. [CLI Command Reference (`git-meta`)](#cli-command-reference-git-meta)
    - [`git meta status`](#git-meta-status)
    - [`git meta checkout`](#git-meta-checkout)
+   - [`git meta commit`](#git-meta-commit)
    - [`git meta push`](#git-meta-push)
+   - [`git meta sync`](#git-meta-sync)
+   - [`git meta rebase`](#git-meta-rebase)
    - [`git meta retry-merge`](#git-meta-retry-merge)
    - [`git meta install-hooks`](#git-meta-install-hooks)
+   - [`git meta init`](#git-meta-init)
+   - [`git meta setup-webhook`](#git-meta-setup-webhook)
+   - [`git meta agents`](#git-meta-agents)
+   - [`git meta version`](#git-meta-version)
 3. [Developer Workflow Scenario](#developer-workflow-scenario)
 4. [Backend Administration (`metastackrd`)](#backend-administration-metastackrd)
    - [Database Schema & Optimistic Locking](#database-schema--optimistic-locking)
    - [GitHub Webhooks Setup](#github-webhooks-setup)
-   - [GitHub Check Runs Integration](#github-check-runs-integration)
-5. [Troubleshooting & Partial Failure Recovery](#troubleshooting--partial-failure-recovery)
+   - [Privacy-by-Default (Opt-In Code Access)](#privacy-by-default-opt-in-code-access)
+5. [Extensions & IDE Plugins](#extensions--ide-plugins)
+   - [Chrome Extension](#chrome-extension)
+   - [VS Code Extension](#vs-code-extension)
+   - [JetBrains Plugin](#jetbrains-plugin)
+6. [Troubleshooting & Partial Failure Recovery](#troubleshooting--partial-failure-recovery)
 
 ---
 
@@ -75,6 +86,16 @@ git meta checkout -b feature/my-feature
 
 ---
 
+### `git meta commit`
+
+Creates coordinated atomic commits across all modified submodules and updates the parent meta-repo commit pointers in a single operation.
+
+```bash
+git meta commit -m "<commit-message>"
+```
+
+---
+
 ### `git meta push`
 
 Enforces **bottom-up pushing**. It inspects all submodules, pushes dirty submodule commits to their respective remote origins first, and only updates parent meta-repo commit pointers once all submodules are pushed.
@@ -84,6 +105,26 @@ git meta push
 ```
 
 > **Why Bottom-Up?** If you push a meta-repo commit pointer without pushing the submodule origin first, other developers will get broken/dangling commit references (`fatal: reference is not a tree`). `git meta push` eliminates this risk.
+
+---
+
+### `git meta sync`
+
+Fetches `origin/main`, fast-forwards/rebases local submodules, and aligns root pointers to keep your multi-repo workspace synchronized.
+
+```bash
+git meta sync
+```
+
+---
+
+### `git meta rebase`
+
+Conducts a two-phase rebase: rebases child submodules first against the target upstream branch, then updates parent meta-repo references.
+
+```bash
+git meta rebase <upstream-branch>
+```
 
 ---
 
@@ -103,6 +144,48 @@ Installs `post-checkout` and `pre-commit` Git hooks into your workspace's `.git/
 
 ```bash
 git meta install-hooks
+```
+
+---
+
+### `git meta init`
+
+Initializes and onboards a repository to MetaStackr by registering with the backend server, installing local Git hooks, and setting up GitHub webhooks.
+
+```bash
+git meta init [--server <server-url>] [--url <webhook-url>] [--secret <secret>] [--allow-code-pull]
+```
+
+---
+
+### `git meta setup-webhook`
+
+Automates repository webhook registration with GitHub.
+
+```bash
+git meta setup-webhook [--url <webhook-url>] [--secret <secret>]
+```
+
+---
+
+### `git meta agents`
+
+Prints machine-readable guidelines and operation rules for AI coding agents operating in MetaStackr workspaces.
+
+```bash
+git meta agents [--json]
+```
+
+---
+
+### `git meta version`
+
+Prints the current semantic version of the `git-meta` CLI binary.
+
+```bash
+git meta version [--json]
+# Or using the root flag:
+git meta --version
 ```
 
 ---
@@ -169,18 +252,78 @@ Key Database Tables:
 
 By default, `metastackrd` operates on branch metadata and Git SHAs without caching, pulling, or cloning repository source code files. This guarantees that your source code remains completely private.
 
-To authorize local code access features, toggle `allow_code_pull` to `true` when registering your tracked repository:
+To authorize local code access features, toggle `allow_code_pull` to `true` when registering your tracked repository (via `git meta init --allow-code-pull` or in repository onboarding configuration):
 
 ```yaml
 # repository configuration example
 name: MetaStackrConfig
-allowCodePull: false  # Change to true to opt-in to code analysis
+allow_code_pull: false  # Change to true to opt-in to code analysis
 ```
 
 **What you get if you opt in:**
 1. **Static Import Analysis**: Allows the server to inspect source files to automatically build and sort topological dependency DAGs based on code imports.
 2. **Local Merge Dry-Runs**: Executes dry-run merges on the server to catch file conflicts early and flag `FAILED_DRIFT` before pushing updates to GitHub.
 3. **Advanced Line-Level Diff Warnings**: Generates detailed warnings inside GitHub Check Runs highlighting exact code-level alignment mismatches.
+
+---
+
+## Extensions & IDE Plugins
+
+MetaStackr includes browser extensions and IDE plugins located in the `extensions/` directory.
+
+### Build All Extensions
+
+You can package all extensions at once using the root Makefile target:
+
+```bash
+make build-extensions
+```
+
+---
+
+### Chrome Extension
+
+Located in `extensions/chrome/`. It integrates directly into GitHub Pull Request UI pages to show live submodule tree status and trigger cascade merges.
+
+**Development / Unpacked Loading:**
+1. Open Chrome and navigate to `chrome://extensions`.
+2. Enable **Developer mode** in the top right toggle.
+3. Click **Load unpacked** and select the `extensions/chrome` directory.
+
+**Packaging for Distribution:**
+```bash
+make build-chrome
+# Output: metastackr-chrome.zip
+```
+
+---
+
+### VS Code Extension
+
+Located in `extensions/vscode/`. It registers a unified Source Control Manager (SCM) provider, status bar item, and commands (`metastackr.commit`, `metastackr.checkout`, `metastackr.sync`).
+
+**Build & Package (.vsix):**
+```bash
+make build-vscode
+# Output: metastackr-vscode.vsix
+```
+
+**Install in VS Code:**
+```bash
+code --install-extension metastackr-vscode.vsix
+```
+
+---
+
+### JetBrains Plugin
+
+Located in `extensions/jetbrains/`. Built using Kotlin and Gradle for IntelliJ IDEA, PyCharm, WebStorm, and GoLand.
+
+**Build Plugin Archive:**
+```bash
+make build-jetbrains
+# Output: extensions/jetbrains/build/distributions/
+```
 
 ---
 
