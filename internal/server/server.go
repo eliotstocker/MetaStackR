@@ -81,8 +81,10 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if !signatureVerified && s.webhookSecret != "" && !VerifySignature(s.webhookSecret, payload, sigHeader) {
-		log.Printf("[webhook] warning: signature verification mismatch (sigHeader: '%s'). Continuing event processing.", sigHeader)
+	if !signatureVerified && !VerifySignature(s.webhookSecret, payload, sigHeader) {
+		log.Printf("[webhook] 401 Unauthorized: signature verification failed for repo payload (sigHeader: '%s')", sigHeader)
+		http.Error(w, "Invalid signature", http.StatusUnauthorized)
+		return
 	}
 
 	event, err := ParseGitHubWebhook(eventTypeHeader, payload)
