@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/eliotstocker/MetaStackR/compare/v1.1.1...v1.1.2) (2026-08-04)
+
+
+### Bug Fixes
+
+* **server:** associate parent meta-repo HeadSHA with MetaPR to fix HTTP 422 on check runs ([8361780](https://github.com/eliotstocker/MetaStackR/commit/83617809e0e12ea850c1aaffd3af2b3d468ee14f))
+
 ## [1.1.1](https://github.com/eliotstocker/MetaStackR/compare/v1.1.0...v1.1.1) (2026-08-04)
 
 
