@@ -1,3 +1,11 @@
+# [1.1.0](https://github.com/eliotstocker/MetaStackR/compare/v1.0.1...v1.1.0) (2026-08-04)
+
+
+### Features
+
+* **core:** implement S2S GitHub App authentication and migrate infrastructure to eu-west-1 ([c1c5d8f](https://github.com/eliotstocker/MetaStackR/commit/c1c5d8f98894afb6391db7a5b8b0c6faf8a660a0))
+* **core:** include unit test and extension background script ([31ff072](https://github.com/eliotstocker/MetaStackR/commit/31ff072a61e4da038a6727901b453504842f6cd2))
+
 ## [1.0.1](https://github.com/eliotstocker/MetaStackR/compare/v1.0.0...v1.0.1) (2026-08-04)
 
 
