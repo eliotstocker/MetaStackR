@@ -1,9 +1,9 @@
 # Binaries
-git-meta
-git-meta-*
-metastackrd
-metastackrd-*
-bootstrap
+/git-meta
+/git-meta-*
+/metastackrd
+/metastackrd-*
+/bootstrap
 dist/
 
 # Terraform
