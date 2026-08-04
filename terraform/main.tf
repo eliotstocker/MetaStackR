@@ -1,6 +1,16 @@
+terraform {
+  required_version = ">= 1.7.0"
+  backend "s3" {
+    bucket = "metastackr-tfstate-436271942138"
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+
 provider "aws" {
   region = var.aws_region
 }
+
 
 # 1. AWS SQS Queue & Dead-Letter Queue (DLQ)
 resource "aws_sqs_queue" "dlq" {
