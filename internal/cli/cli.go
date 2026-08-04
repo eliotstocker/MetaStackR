@@ -72,6 +72,14 @@ func NewRootCmd() *cobra.Command {
 
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output machine-readable JSON")
 
+	rootCmd.SetVersionTemplate(GetBanner() + "git-meta version {{.Version}}\n")
+
+	origHelpFunc := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		PrintBanner()
+		origHelpFunc(cmd, args)
+	})
+
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newCheckoutCmd())
 	rootCmd.AddCommand(newCommitCmd())

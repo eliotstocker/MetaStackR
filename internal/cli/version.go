@@ -19,6 +19,7 @@ func newVersionCmd() *cobra.Command {
 				})
 				return
 			}
+			PrintBanner()
 			fmt.Printf("git-meta version %s\n", Version)
 		},
 	}
