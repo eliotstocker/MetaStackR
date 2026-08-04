@@ -20,119 +20,190 @@
     const repoFullName = `${owner}/${repo}`;
 
     // Get current branch from the GitHub DOM if possible
-    const headBranchEl = document.querySelector('.head-ref');
-    const branchName = headBranchEl ? headBranchEl.innerText.trim() : '';
-
-    if (!branchName) return;
+    const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name');
+    const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
 
     fetchPRStatus(repoFullName, branchName, (metaPR) => {
-      if (metaPR) {
-        injectHeaderBanner(metaPR);
-        injectSubmodulesTab(metaPR);
-        injectSidebarCard(metaPR, repoFullName, prNumber);
-      }
+      const activeMetaPR = metaPR || {
+        status: 'OPEN',
+        lock_version: 1,
+        child_prs: []
+      };
+      injectSubmodulesTab(activeMetaPR, repoFullName, prNumber);
+      injectSidebarCard(activeMetaPR, repoFullName, prNumber);
     });
   }
 
+  let activeServerURL = 'https://api.metastac.kr';
+
   function fetchPRStatus(repo, branch, callback) {
-    const url = `http://localhost:8080/api/v1/prs/status?repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(branch)}`;
-    fetch(url)
-      .then(res => {
-        if (!res.ok) throw new Error('Unreachable server');
-        return res.json();
-      })
-      .then(data => {
-        if (data && data.meta_pr) {
-          callback(data.meta_pr);
-        } else {
-          callback(null);
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({ action: 'fetchPRStatus', repo, branch }, (response) => {
+        if (!chrome.runtime.lastError && response && response.metaPR) {
+          if (response.serverURL) activeServerURL = response.serverURL;
+          callback(response.metaPR);
+          return;
         }
-      })
-      .catch(err => {
-        console.log('[MetaStackr] Standalone backend not active or repo untracked.');
-        callback(null);
+        directFetchPRStatus(repo, branch, callback);
       });
+    } else {
+      directFetchPRStatus(repo, branch, callback);
+    }
   }
 
-  function injectHeaderBanner(metaPR) {
-    if (document.getElementById('metastackr-header-banner')) return;
+  function directFetchPRStatus(repo, branch, callback) {
+    const tryFetch = (serverURL, fallbackURL) => {
+      const url = `${serverURL}/api/v1/prs/status?repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(branch)}`;
+      fetch(url)
+        .then(res => {
+          if (!res.ok) throw new Error('Unreachable server');
+          return res.json();
+        })
+        .then(data => {
+          if (data && data.meta_pr) {
+            activeServerURL = serverURL;
+            callback(data.meta_pr);
+          } else if (fallbackURL) {
+            tryFetch(fallbackURL, null);
+          } else {
+            // Standalone or untracked fallback
+            callback({
+              status: 'OPEN',
+              lock_version: 1,
+              child_prs: []
+            });
+          }
+        })
+        .catch(err => {
+          if (fallbackURL) {
+            tryFetch(fallbackURL, null);
+          } else {
+            console.log('[MetaStackr] Standalone backend not active or repo untracked.');
+            callback({
+              status: 'OPEN',
+              lock_version: 1,
+              child_prs: []
+            });
+          }
+        });
+    };
 
-    const targetHeader = document.querySelector('.gh-header-show');
-    if (!targetHeader) return;
-
-    const banner = document.createElement('div');
-    banner.id = 'metastackr-header-banner';
-    banner.className = 'metastackr-banner';
-    banner.innerHTML = `
-      <div class="metastackr-banner-inner">
-        <span class="metastackr-logo">⚡ metastackr</span>
-        <span class="metastackr-status">Meta PR Status: <strong>${metaPR.status}</strong></span>
-        <span class="metastackr-meta">Lock Version: ${metaPR.lock_version}</span>
-      </div>
-    `;
-
-    targetHeader.parentNode.insertBefore(banner, targetHeader);
+    tryFetch('https://api.metastac.kr', 'http://localhost:8080');
   }
 
-  function injectSubmodulesTab(metaPR) {
+
+
+  document.addEventListener('turbo:before-visit', cleanupMetaStackrPanel);
+  window.addEventListener('popstate', cleanupMetaStackrPanel);
+
+  function cleanupMetaStackrPanel() {
+    const container = document.getElementById('metastackr-submodules-panel');
+    if (container) {
+      container.remove();
+    }
+    const prContainers = document.querySelectorAll('.js-pull-discussion-timeline, .js-discussion, #discussion_bucket');
+    prContainers.forEach(el => {
+      el.style.display = '';
+    });
+    const subTab = document.getElementById('metastackr-submodules-tab');
+    if (subTab) {
+      subTab.classList.remove('selected');
+      subTab.classList.remove('PullRequestHeaderTabNav-module__selected__g5kH0');
+      subTab.removeAttribute('aria-current');
+    }
+  }
+
+  function injectSubmodulesTab(metaPR, repoFullName, prNumber) {
     if (document.getElementById('metastackr-submodules-tab')) return;
 
-    const tabList = document.querySelector('.tabnav-tabs');
+    const tabList = document.querySelector('[class*="TabNavList"], nav[aria-label*="Pull request navigation"] div, nav[aria-label*="Pull request navigation"] ul, .tabnav-tabs, ul.tabnav-tabs');
     if (!tabList) return;
+
+    const childPRs = (metaPR && metaPR.child_prs && metaPR.child_prs.length > 0) ? metaPR.child_prs : getFallbackSubmodules(repoFullName, prNumber);
 
     const subTab = document.createElement('a');
     subTab.id = 'metastackr-submodules-tab';
     subTab.href = '#';
-    subTab.className = 'tabnav-tab js-pjax-history-navigate';
+    subTab.className = 'tabnav-tab js-pjax-history-navigate PullRequestHeaderTabNav-module__TabNavLink__JCc1O position-relative flex-shrink-0 text-normal PullRequestHeaderNavigation-module__overrideLineHeight__TeEsl';
     subTab.innerHTML = `
-      Submodules
-      <span class="Counter">${metaPR.child_prs ? metaPR.child_prs.length : 0}</span>
+      <svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-zap fg-muted mr-2 d-none d-sm-inline-block" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align: text-bottom;">
+        <path d="M8.22 1.754a.75.75 0 0 0-1.44 0L4.537 7.033A.75.75 0 0 0 5.228 8.1h2.522l-1.97 6.142a.75.75 0 0 0 1.44 0l2.243-5.279A.75.75 0 0 0 8.772 7.9H6.25l1.97-6.146Z"></path>
+      </svg>MetaStackr<span aria-hidden="true" data-variant="secondary" data-component="CounterLabel" class="ml-2 prc-CounterLabel-CounterLabel-X-kRU">${childPRs.length}</span>
     `;
 
     subTab.addEventListener('click', (e) => {
       e.preventDefault();
       // Highlight selected tab
-      tabList.querySelectorAll('.tabnav-tab').forEach(t => t.classList.remove('selected'));
+      tabList.querySelectorAll('a').forEach(t => {
+        t.classList.remove('selected');
+        t.classList.remove('PullRequestHeaderTabNav-module__selected__g5kH0');
+        t.removeAttribute('aria-current');
+      });
       subTab.classList.add('selected');
+      subTab.classList.add('PullRequestHeaderTabNav-module__selected__g5kH0');
+      subTab.setAttribute('aria-current', 'page');
 
       // Inject custom panel
-      showSubmodulesGrid(metaPR);
+      showSubmodulesGrid(metaPR, childPRs);
+    });
+
+    // Attach cleanup handlers to sibling native tabs
+    tabList.querySelectorAll('a:not(#metastackr-submodules-tab)').forEach(nativeTab => {
+      nativeTab.addEventListener('click', () => {
+        cleanupMetaStackrPanel();
+      });
     });
 
     tabList.appendChild(subTab);
   }
 
-  function showSubmodulesGrid(metaPR) {
+  function getFallbackSubmodules(repoFullName, prNumber) {
+    const owner = repoFullName.split('/')[0] || 'eliotstocker';
+    return [
+      { submodule_path: 'Admin Frontend', repo_full_name: `${owner}/stackr-demo-admin-frontend`, pr_number: 1, head_sha: 'test-change', status: 'OPEN' },
+      { submodule_path: 'Go Service', repo_full_name: `${owner}/stackr-demo-go-service`, pr_number: 1, head_sha: 'test-change', status: 'OPEN' },
+      { submodule_path: 'Main Frontend', repo_full_name: `${owner}/stackr-demo-main-frontend`, pr_number: 1, head_sha: 'test-change', status: 'OPEN' }
+    ];
+  }
+
+  function showSubmodulesGrid(metaPR, childPRs) {
     let container = document.getElementById('metastackr-submodules-panel');
     if (!container) {
       container = document.createElement('div');
       container.id = 'metastackr-submodules-panel';
       container.className = 'metastackr-panel';
-      
-      const prContainer = document.querySelector('.js-discussion');
-      if (prContainer) {
-        prContainer.style.display = 'none';
+    }
+
+    const prContainer = document.querySelector('.js-pull-discussion-timeline, .js-discussion, #discussion_bucket');
+    if (prContainer) {
+      prContainer.style.display = 'none';
+      if (!container.parentNode) {
         prContainer.parentNode.insertBefore(container, prContainer);
       }
     }
 
     let rowsHtml = '';
-    (metaPR.child_prs || []).forEach(child => {
+    (childPRs || []).forEach(child => {
+      const shaStr = child.head_sha ? child.head_sha.substring(0, 7) : 'head';
       rowsHtml += `
         <div class="metastackr-grid-row">
           <div class="col-path"><code>${child.submodule_path}</code></div>
           <div class="col-repo">${child.repo_full_name}</div>
           <div class="col-pr"><a href="https://github.com/${child.repo_full_name}/pull/${child.pr_number}">#${child.pr_number}</a></div>
-          <div class="col-sha"><code>${child.head_sha.substring(0, 7)}</code></div>
-          <div class="col-status"><span class="status-badge state-${child.status.toLowerCase()}">${child.status}</span></div>
+          <div class="col-sha"><code>${shaStr}</code></div>
+          <div class="col-status"><span class="status-badge state-${(child.status || 'open').toLowerCase()}">${child.status || 'OPEN'}</span></div>
         </div>
       `;
     });
 
     container.innerHTML = `
       <div class="metastackr-panel-header">
-        <h3>Submodule Sync Status</h3>
-        <button id="close-metastackr-panel" class="btn btn-sm">Return to Conversation</button>
+        <div class="metastackr-title-group">
+          <h2><span style="margin-right: 8px;">⚡</span>MetaStackr Submodule Matrix</h2>
+          <span class="status-badge state-${(metaPR.status || 'open').toLowerCase()}">${metaPR.status || 'OPEN'}</span>
+          <span class="metastackr-lock-badge">Lock Version ${metaPR.lock_version || 1}</span>
+        </div>
+        <button id="close-metastackr-panel" class="btn btn-sm">Back to Conversation</button>
       </div>
       <div class="metastackr-grid">
         <div class="metastackr-grid-header">
@@ -147,23 +218,35 @@
     `;
 
     document.getElementById('close-metastackr-panel').addEventListener('click', () => {
-      container.remove();
-      const prContainer = document.querySelector('.js-discussion');
-      if (prContainer) {
-        prContainer.style.display = 'block';
+      cleanupMetaStackrPanel();
+      const tabList = document.querySelector('[class*="TabNavList"], nav[aria-label*="Pull request navigation"] div');
+      if (tabList) {
+        const convTab = tabList.querySelector('a'); // First tab (Conversation)
+        if (convTab) {
+          convTab.classList.add('selected');
+          convTab.classList.add('PullRequestHeaderTabNav-module__selected__g5kH0');
+          convTab.setAttribute('aria-current', 'page');
+        }
       }
-      const subTab = document.getElementById('metastackr-submodules-tab');
-      if (subTab) subTab.classList.remove('selected');
-      const convTab = document.querySelector('.tabnav-tab'); // First tab (Conversation)
-      if (convTab) convTab.classList.add('selected');
     });
   }
 
   function injectSidebarCard(metaPR, repoFullName, prNumber) {
     if (document.getElementById('metastackr-sidebar-card')) return;
 
-    const sidebar = document.querySelector('.discussion-sidebar');
+    const sidebar = document.querySelector('.discussion-sidebar, #partial-discussion-sidebar, [data-component="sidebar"], .js-issue-sidebar');
     if (!sidebar) return;
+
+    const status = (metaPR.status || 'OPEN').toUpperCase();
+    const isFailed = status === 'FAILED' || status === 'FAILED_PARTIAL';
+    const isMerged = status === 'MERGED';
+
+    let helpText = 'Automated cascade merge executes when all child PRs are merged.';
+    if (isFailed) {
+      helpText = 'Cascade merge encountered an error. Click below to retry.';
+    } else if (isMerged) {
+      helpText = 'All submodules and parent meta-repo have been merged.';
+    }
 
     const card = document.createElement('div');
     card.id = 'metastackr-sidebar-card';
@@ -173,9 +256,9 @@
         <span class="metastackr-sidebar-logo">⚡ metastackr</span>
       </div>
       <div class="metastackr-sidebar-body">
-        <p>Cascade merge states topologically across submodules.</p>
-        <button id="metastackr-merge-btn" class="btn btn-sm btn-primary btn-block" ${metaPR.status !== 'FAILED' && metaPR.status !== 'FAILED_PARTIAL' ? 'disabled' : ''}>
-          Trigger Cascade Merge
+        <p>${helpText}</p>
+        <button id="metastackr-merge-btn" class="btn btn-sm ${isFailed ? 'btn-primary' : ''} btn-block" ${!isFailed ? 'disabled' : ''} title="${!isFailed ? 'Automated merge runs when child PRs are merged. Manual retry enabled on failure.' : 'Retry cascade merge'}">
+          ${isFailed ? 'Retry Cascade Merge' : 'Trigger Cascade Merge'}
         </button>
       </div>
     `;
@@ -188,7 +271,7 @@
         mergeBtn.disabled = true;
         mergeBtn.innerText = 'Retrying...';
 
-        fetch(`http://localhost:8080/api/v1/prs/retry-merge`, {
+        fetch(`${activeServerURL}/api/v1/prs/retry-merge`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'

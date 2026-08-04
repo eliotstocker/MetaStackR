@@ -12,6 +12,7 @@ Welcome to the **MetaStackr User Guide**. This document provides end-to-end inst
    - [`git meta checkout`](#git-meta-checkout)
    - [`git meta commit`](#git-meta-commit)
    - [`git meta push`](#git-meta-push)
+   - [`git meta create-pr`](#git-meta-create-pr)
    - [`git meta sync`](#git-meta-sync)
    - [`git meta rebase`](#git-meta-rebase)
    - [`git meta retry-merge`](#git-meta-retry-merge)
@@ -105,6 +106,20 @@ git meta push
 ```
 
 > **Why Bottom-Up?** If you push a meta-repo commit pointer without pushing the submodule origin first, other developers will get broken/dangling commit references (`fatal: reference is not a tree`). `git meta push` eliminates this risk.
+
+---
+
+### `git meta create-pr` (Alias: `git meta pr`)
+
+Opens or creates GitHub Pull Requests across all modified submodules and the parent meta-repo in a single command. It uses a hybrid strategy: automatically creating PRs via `gh` CLI or GitHub API if available, or opening PR compare pages in your default web browser as a fallback.
+
+```bash
+# Automatically create PRs across all modified repos
+git meta create-pr --title "feat: user billing integration"
+
+# Short alias to open compare pages in web browser
+git meta pr --web
+```
 
 ---
 
@@ -220,7 +235,13 @@ git meta push
 ```
 
 ### Step 5: Open Meta PR & Child PRs
-Open pull requests on GitHub for `sub/billing-api`, `sub/frontend`, and `meta-repo`. MetaStackr will synthesize the tree and maintain a single GitHub Check Run named `meta-repo/sync`.
+Automatically create or open pull requests on GitHub for all modified submodules (`sub/billing-api`, `sub/frontend`) and `meta-repo` using a single command:
+
+```bash
+git meta pr --title "feat: user billing integration"
+```
+
+MetaStackr will synthesize the tree and maintain a single GitHub Check Run named `meta-repo/sync`.
 
 ---
 

@@ -30,6 +30,14 @@ func main() {
 
 	webhookSecret := os.Getenv("WEBHOOK_SECRET")
 	ghToken := os.Getenv("GH_TOKEN")
+	appID := os.Getenv("GITHUB_APP_ID")
+	if appID == "" {
+		appID = os.Getenv("APP_ID")
+	}
+	privateKeyPEM := os.Getenv("GITHUB_PRIVATE_KEY")
+	if privateKeyPEM == "" {
+		privateKeyPEM = os.Getenv("PRIVATE_KEY")
+	}
 	sqsQueueURL := os.Getenv("SQS_QUEUE_URL")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -48,7 +56,11 @@ func main() {
 		repo = db.NewRepository(database)
 	}
 
-	ghClient := server.NewGitHubClient(ghToken)
+	ghClient, err := server.NewGitHubClientWithApp(appID, privateKeyPEM, ghToken)
+	if err != nil {
+		log.Printf("[warning] Failed to initialize GitHub App client: %v", err)
+		ghClient = server.NewGitHubClient(ghToken)
+	}
 	engine := worker.NewEngine(repo, ghClient, nil)
 
 	// If SQS is configured, start the SQS consumer loop

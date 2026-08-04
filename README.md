@@ -13,6 +13,7 @@ It enables developers to work transparently across a root meta-repository contai
   - `git meta checkout [-b] <branch>`: Safely creates or switches branches across parent meta-repo and all submodules.
   - `git meta commit -m "<msg>"`: Creates coordinated atomic commits across all modified submodules and updates parent commit pointers.
   - `git meta push`: Enforces bottom-up pushing (pushes submodule origins before parent commit pointers).
+  - `git meta create-pr`: Opens or creates GitHub Pull Requests across all modified submodules and meta-repo.
   - `git meta sync`: Fetches `origin/main`, fast-forwards/rebases local submodules, and aligns root pointers.
   - `git meta rebase <upstream>`: Conducts a two-phase rebase: rebases child submodules first, then parent meta-repo references.
   - `git meta retry-merge --pr <pr-number>`: Re-triggers cascade merges on partially failed PRs.

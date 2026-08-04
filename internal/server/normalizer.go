@@ -31,17 +31,18 @@ const (
 )
 
 type NormalizedEvent struct {
-	EventType    EventType
-	Repo         string
-	PRNumber     int
-	BranchName   string
-	Action       string
-	ReviewState  db.ReviewStatus
-	CIState      db.CIStatus
-	Merged       bool
-	MergedSHA    string
-	ChangedFiles []SubmoduleChange
-	RawPayload   json.RawMessage
+	EventType      EventType
+	Repo           string
+	PRNumber       int
+	BranchName     string
+	Action         string
+	ReviewState    db.ReviewStatus
+	CIState        db.CIStatus
+	Merged         bool
+	MergedSHA      string
+	InstallationID int64
+	ChangedFiles   []SubmoduleChange
+	RawPayload     json.RawMessage
 }
 
 type SubmoduleChange struct {
@@ -101,6 +102,9 @@ type ghPRPayload struct {
 	Repository struct {
 		FullName string `json:"full_name"`
 	} `json:"repository"`
+	Installation struct {
+		ID int64 `json:"id"`
+	} `json:"installation"`
 }
 
 func parsePullRequestEvent(payload []byte) (*NormalizedEvent, error) {
@@ -121,14 +125,15 @@ func parsePullRequestEvent(payload []byte) (*NormalizedEvent, error) {
 	}
 
 	return &NormalizedEvent{
-		EventType:  evtType,
-		Repo:       p.Repository.FullName,
-		PRNumber:   p.Number,
-		BranchName: p.PullRequest.Head.Ref,
-		Action:     p.Action,
-		Merged:     p.PullRequest.Merged,
-		MergedSHA:  p.PullRequest.Head.SHA,
-		RawPayload: json.RawMessage(payload),
+		EventType:      evtType,
+		Repo:           p.Repository.FullName,
+		PRNumber:       p.Number,
+		BranchName:     p.PullRequest.Head.Ref,
+		Action:         p.Action,
+		Merged:         p.PullRequest.Merged,
+		MergedSHA:      p.PullRequest.Head.SHA,
+		InstallationID: p.Installation.ID,
+		RawPayload:     json.RawMessage(payload),
 	}, nil
 }
 
@@ -146,6 +151,9 @@ type ghReviewPayload struct {
 	Repository struct {
 		FullName string `json:"full_name"`
 	} `json:"repository"`
+	Installation struct {
+		ID int64 `json:"id"`
+	} `json:"installation"`
 }
 
 func parsePullRequestReviewEvent(payload []byte) (*NormalizedEvent, error) {
@@ -165,13 +173,14 @@ func parsePullRequestReviewEvent(payload []byte) (*NormalizedEvent, error) {
 	}
 
 	return &NormalizedEvent{
-		EventType:   EventTypeReview,
-		Repo:        p.Repository.FullName,
-		PRNumber:    p.PullRequest.Number,
-		BranchName:  p.PullRequest.Head.Ref,
-		Action:      p.Action,
-		ReviewState: reviewState,
-		RawPayload:  json.RawMessage(payload),
+		EventType:      EventTypeReview,
+		Repo:           p.Repository.FullName,
+		PRNumber:       p.PullRequest.Number,
+		BranchName:     p.PullRequest.Head.Ref,
+		Action:         p.Action,
+		ReviewState:    reviewState,
+		InstallationID: p.Installation.ID,
+		RawPayload:     json.RawMessage(payload),
 	}, nil
 }
 
@@ -193,6 +202,9 @@ type ghCheckRunPayload struct {
 	Repository struct {
 		FullName string `json:"full_name"`
 	} `json:"repository"`
+	Installation struct {
+		ID int64 `json:"id"`
+	} `json:"installation"`
 }
 
 func parseCheckRunEvent(payload []byte) (*NormalizedEvent, error) {
@@ -219,13 +231,14 @@ func parseCheckRunEvent(payload []byte) (*NormalizedEvent, error) {
 	}
 
 	return &NormalizedEvent{
-		EventType:  EventTypeCheckStatus,
-		Repo:       p.Repository.FullName,
-		PRNumber:   prNum,
-		BranchName: branch,
-		Action:     p.Action,
-		CIState:    ciState,
-		RawPayload: json.RawMessage(payload),
+		EventType:      EventTypeCheckStatus,
+		Repo:           p.Repository.FullName,
+		PRNumber:       prNum,
+		BranchName:     branch,
+		Action:         p.Action,
+		CIState:        ciState,
+		InstallationID: p.Installation.ID,
+		RawPayload:     json.RawMessage(payload),
 	}, nil
 }
 
@@ -242,6 +255,9 @@ type ghWorkflowRunPayload struct {
 	Repository struct {
 		FullName string `json:"full_name"`
 	} `json:"repository"`
+	Installation struct {
+		ID int64 `json:"id"`
+	} `json:"installation"`
 }
 
 func parseWorkflowRunEvent(payload []byte) (*NormalizedEvent, error) {
@@ -266,13 +282,14 @@ func parseWorkflowRunEvent(payload []byte) (*NormalizedEvent, error) {
 	}
 
 	return &NormalizedEvent{
-		EventType:  EventTypeCheckStatus,
-		Repo:       p.Repository.FullName,
-		PRNumber:   prNum,
-		BranchName: p.WorkflowRun.HeadBranch,
-		Action:     p.Action,
-		CIState:    ciState,
-		RawPayload: json.RawMessage(payload),
+		EventType:      EventTypeCheckStatus,
+		Repo:           p.Repository.FullName,
+		PRNumber:       prNum,
+		BranchName:     p.WorkflowRun.HeadBranch,
+		Action:         p.Action,
+		CIState:        ciState,
+		InstallationID: p.Installation.ID,
+		RawPayload:     json.RawMessage(payload),
 	}, nil
 }
 

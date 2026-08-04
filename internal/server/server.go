@@ -29,11 +29,28 @@ func NewServer(repo *db.Repository, gh *GitHubClient, webhookSecret string, reco
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /webhooks/github", s.handleGitHubWebhook)
-	mux.HandleFunc("GET /api/v1/prs/status", s.handlePRStatusQuery)
-	mux.HandleFunc("POST /api/v1/prs/retry-merge", s.handleRetryMerge)
-	mux.HandleFunc("POST /api/v1/repos/track", s.handleTrackRepo)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	handleWithCORS := func(pattern string, handler http.HandlerFunc) {
+		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			handler(w, r)
+		})
+	}
+
+	handleWithCORS("POST /webhooks/github", s.handleGitHubWebhook)
+	handleWithCORS("OPTIONS /webhooks/github", func(w http.ResponseWriter, r *http.Request) {})
+	handleWithCORS("GET /api/v1/prs/status", s.handlePRStatusQuery)
+	handleWithCORS("OPTIONS /api/v1/prs/status", func(w http.ResponseWriter, r *http.Request) {})
+	handleWithCORS("POST /api/v1/prs/retry-merge", s.handleRetryMerge)
+	handleWithCORS("OPTIONS /api/v1/prs/retry-merge", func(w http.ResponseWriter, r *http.Request) {})
+	handleWithCORS("POST /api/v1/repos/track", s.handleTrackRepo)
+	handleWithCORS("OPTIONS /api/v1/repos/track", func(w http.ResponseWriter, r *http.Request) {})
+	handleWithCORS("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	})
@@ -95,24 +112,80 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 		return nil
 	}
 
+	// Helper to resolve installation ID
+	getInstID := func(evtID int64, dbInstID string) int64 {
+		if evtID > 0 {
+			return evtID
+		}
+		if dbInstID != "" {
+			var parsed int64
+			_, _ = fmt.Sscanf(dbInstID, "%d", &parsed)
+			return parsed
+		}
+		return 0
+	}
+
 	// 1. Check if the repo is tracked as a Meta Repo
 	tracked, err := s.repo.GetTrackedRepoByFullName(ctx, evt.Repo)
 	if err == nil && tracked != nil {
 		metaPR, err := s.repo.GetMetaPRByRepoAndNumber(ctx, evt.Repo, evt.PRNumber)
-		if err == nil && metaPR != nil {
+		if (err != nil || metaPR == nil) && evt.PRNumber > 0 {
+			metaPR = &db.MetaPR{
+				ID:          uuid.New(),
+				MetaRepoID:  tracked.ID,
+				PRNumber:    evt.PRNumber,
+				BranchName:  evt.BranchName,
+				BaseBranch:  "main",
+				Status:      "OPEN",
+				LockVersion: 1,
+			}
+			_ = s.repo.CreateMetaPR(ctx, metaPR)
+		}
+		if metaPR != nil {
 			if evt.EventType == EventTypePRMerged {
 				_ = s.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "MERGED", metaPR.LockVersion)
-			} else if evt.EventType == EventTypePROpened {
+			} else {
 				s.autoSynthesizeChildPRs(ctx, metaPR, evt)
 			}
-			_ = s.gh.UpdateMetaCheckRun(ctx, evt.Repo, evt.MergedSHA, metaPR)
+
+			headSHA := evt.MergedSHA
+			if headSHA == "" {
+				for _, child := range metaPR.ChildPRs {
+					if child.HeadSHA != "" {
+						headSHA = child.HeadSHA
+						break
+					}
+				}
+			}
+
+			if headSHA != "" {
+				instID := getInstID(evt.InstallationID, tracked.InstallationID)
+				if err := s.gh.UpdateMetaCheckRun(ctx, tracked.RepoFullName, headSHA, metaPR, instID); err != nil {
+					log.Printf("[checks] Error updating meta check run for %s: %v", tracked.RepoFullName, err)
+				}
+			}
 		}
 		return nil
 	}
 
 	// 2. Otherwise check if it is a child PR
 	child, err := s.repo.GetChildPRByRepoAndNumber(ctx, evt.Repo, evt.PRNumber)
-	if err == nil && child != nil {
+	if (err != nil || child == nil) && evt.BranchName != "" {
+		// Attempt fallback by matching branch name across tracked Meta PRs
+		metaPR, _ := s.repo.GetMetaPRByAnyBranch(ctx, evt.BranchName)
+		if metaPR != nil {
+			child = &db.ChildPR{
+				ID:            uuid.New(),
+				MetaPRID:      metaPR.ID,
+				SubmodulePath: evt.Repo,
+				RepoFullName:  evt.Repo,
+				PRNumber:      evt.PRNumber,
+				HeadSHA:       evt.MergedSHA,
+				Status:        "OPEN",
+			}
+			_ = s.repo.UpsertChildPR(ctx, child)
+		}
+	} else if err == nil && child != nil {
 		if evt.Merged {
 			child.Status = "MERGED"
 		}
@@ -127,7 +200,19 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 
 		parentMeta, err := s.repo.GetMetaPRByID(ctx, child.MetaPRID)
 		if err == nil && parentMeta != nil {
-			_ = s.gh.UpdateMetaCheckRun(ctx, evt.Repo, evt.MergedSHA, parentMeta)
+			trackedMeta, err := s.repo.GetTrackedRepoByID(ctx, parentMeta.MetaRepoID)
+			if err == nil && trackedMeta != nil {
+				headSHA := evt.MergedSHA
+				if headSHA == "" {
+					headSHA = child.HeadSHA
+				}
+				if headSHA != "" {
+					instID := getInstID(evt.InstallationID, trackedMeta.InstallationID)
+					if err := s.gh.UpdateMetaCheckRun(ctx, trackedMeta.RepoFullName, headSHA, parentMeta, instID); err != nil {
+						log.Printf("[checks] Error updating meta check run for %s: %v", trackedMeta.RepoFullName, err)
+					}
+				}
+			}
 			s.evaluateMetaPRReadiness(ctx, parentMeta)
 		}
 	}
@@ -200,28 +285,8 @@ func (s *Server) handlePRStatusQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tracked, err := s.repo.GetTrackedRepoByFullName(r.Context(), repo)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"meta_pr": nil,
-			"message": "Repo not tracked",
-		})
-		return
-	}
-
-	query := `
-		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, status, lock_version, created_at, updated_at
-		FROM meta_prs
-		WHERE meta_repo_id = $1 AND branch_name = $2
-	`
-	metaPR := &db.MetaPR{}
-	err = s.repo.DB().QueryRowContext(r.Context(), query, tracked.ID, branch).Scan(
-		&metaPR.ID, &metaPR.MetaRepoID, &metaPR.PRNumber, &metaPR.BranchName, &metaPR.BaseBranch, &metaPR.Status, &metaPR.LockVersion, &metaPR.CreatedAt, &metaPR.UpdatedAt,
-	)
-
-	if err != nil {
+	metaPR, err := s.repo.GetMetaPRByRepoAndBranch(r.Context(), repo, branch)
+	if err != nil || metaPR == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -230,9 +295,6 @@ func (s *Server) handlePRStatusQuery(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
-	children, _ := s.repo.GetChildPRsByMetaPRID(r.Context(), metaPR.ID)
-	metaPR.ChildPRs = children
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(PRStatusResponse{MetaPR: metaPR})

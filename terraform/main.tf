@@ -95,9 +95,13 @@ resource "aws_lambda_function" "backend" {
 
   environment {
     variables = {
-      DATABASE_URL = var.database_url
-      ENVIRONMENT  = "production"
-      SQS_QUEUE_URL = aws_sqs_queue.queue.id
+      DATABASE_URL       = var.database_url
+      ENVIRONMENT        = "production"
+      SQS_QUEUE_URL      = aws_sqs_queue.queue.id
+      GITHUB_APP_ID      = var.github_app_id
+      GITHUB_PRIVATE_KEY = var.github_private_key
+      WEBHOOK_SECRET     = var.webhook_secret
+      GH_TOKEN           = var.gh_token
     }
   }
 }

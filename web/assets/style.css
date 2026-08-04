@@ -133,6 +133,17 @@ main {
   font-size: 0.95rem;
 }
 
+.btn-primary {
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 500;
+  border: 1px solid var(--fg);
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
 .btn:hover {
   border-color: var(--gradient-to);
 }

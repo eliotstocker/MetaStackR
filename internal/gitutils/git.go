@@ -8,7 +8,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type SubmoduleStatus struct {
@@ -81,15 +84,54 @@ func parseRepoOwnerAndName(rawURL string) string {
 	return rawURL
 }
 
+func hasNoUpstream(dir string) bool {
+	_, err := ExecGit(dir, "rev-parse", "--abbrev-ref", "@{u}")
+	return err != nil
+}
+
+func getUnpushedCommits(dir string) int {
+	out, err := ExecGit(dir, "log", "@{u}..HEAD", "--oneline")
+	if err == nil {
+		outStr := strings.TrimSpace(out)
+		if outStr == "" {
+			return 0
+		}
+		return len(strings.Split(outStr, "\n"))
+	}
+
+	branch, err := ExecGit(dir, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil || branch == "" || branch == "HEAD" {
+		return 0
+	}
+
+	_, remoteErr := ExecGit(dir, "rev-parse", "--verify", "origin/"+branch)
+	if remoteErr != nil {
+		allCommits, _ := ExecGit(dir, "log", "origin/main..HEAD", "--oneline")
+		if strings.TrimSpace(allCommits) == "" {
+			allCommits, _ = ExecGit(dir, "log", "origin/master..HEAD", "--oneline")
+		}
+		if strings.TrimSpace(allCommits) != "" {
+			return len(strings.Split(strings.TrimSpace(allCommits), "\n"))
+		}
+		headCount, _ := ExecGit(dir, "rev-list", "--count", "HEAD")
+		if n, _ := strconv.Atoi(strings.TrimSpace(headCount)); n > 0 {
+			return n
+		}
+		return 1
+	}
+
+	out, err = ExecGit(dir, "log", "origin/"+branch+"..HEAD", "--oneline")
+	if err == nil && strings.TrimSpace(out) != "" {
+		return len(strings.Split(strings.TrimSpace(out), "\n"))
+	}
+
+	return 0
+}
+
 func GetLocalStatus(rootDir string) (*MetaLocalStatus, error) {
 	metaBranch, _ := ExecGit(rootDir, "rev-parse", "--abbrev-ref", "HEAD")
 	uncommittedRaw, _ := ExecGit(rootDir, "status", "--porcelain")
-	unpushedRaw, _ := ExecGit(rootDir, "log", "@{u}..HEAD", "--oneline")
-
-	unpushedCount := 0
-	if strings.TrimSpace(unpushedRaw) != "" {
-		unpushedCount = len(strings.Split(strings.TrimSpace(unpushedRaw), "\n"))
-	}
+	unpushedCount := getUnpushedCommits(rootDir)
 
 	status := &MetaLocalStatus{
 		MetaRepoPath:    rootDir,
@@ -123,12 +165,7 @@ func GetLocalStatus(rootDir string) (*MetaLocalStatus, error) {
 			subDir := rootDir + "/" + subPath
 			subBranch, _ := ExecGit(subDir, "rev-parse", "--abbrev-ref", "HEAD")
 			subUncommitted, _ := ExecGit(subDir, "status", "--porcelain")
-			subUnpushed, _ := ExecGit(subDir, "log", "@{u}..HEAD", "--oneline")
-
-			subUnpushedCount := 0
-			if strings.TrimSpace(subUnpushed) != "" {
-				subUnpushedCount = len(strings.Split(strings.TrimSpace(subUnpushed), "\n"))
-			}
+			subUnpushedCount := getUnpushedCommits(subDir)
 
 			status.Submodules = append(status.Submodules, SubmoduleStatus{
 				Path:              subPath,
@@ -235,15 +272,19 @@ func PushBottomUp(rootDir string) error {
 
 	for _, sub := range status.Submodules {
 		subDir := rootDir + "/" + sub.Path
-		if sub.UnpushedCommits > 0 || sub.HasUncommitted {
-			if _, err := ExecGit(subDir, "push", "origin", sub.Branch); err != nil {
-				return fmt.Errorf("ABORTING PUSH: Failed to push submodule '%s': %w", sub.Path, err)
+		if sub.Branch != "" && sub.Branch != "HEAD" {
+			if sub.UnpushedCommits > 0 || sub.HasUncommitted || hasNoUpstream(subDir) {
+				if _, err := ExecGit(subDir, "push", "-u", "origin", sub.Branch); err != nil {
+					return fmt.Errorf("ABORTING PUSH: Failed to push submodule '%s': %w", sub.Path, err)
+				}
 			}
 		}
 	}
 
-	if _, err := ExecGit(rootDir, "push", "origin", status.MetaBranch); err != nil {
-		return fmt.Errorf("failed to push root meta-repo: %w", err)
+	if status.MetaBranch != "" && status.MetaBranch != "HEAD" {
+		if _, err := ExecGit(rootDir, "push", "-u", "origin", status.MetaBranch); err != nil {
+			return fmt.Errorf("failed to push root meta-repo: %w", err)
+		}
 	}
 
 	return nil
@@ -410,6 +451,279 @@ func RegisterGitHubWebhook(rootDir, targetURL, secret, token string) error {
 			fmt.Printf("  ⚠️ Submodule registration failed: %v\n", err)
 		} else {
 			fmt.Printf("  ✅ Submodule webhook registered.\n")
+		}
+	}
+
+	return nil
+}
+
+type PRResult struct {
+	RepoPath   string `json:"repo_path"`
+	RepoName   string `json:"repo_name"`
+	HeadBranch string `json:"head_branch"`
+	BaseBranch string `json:"base_branch"`
+	URL        string `json:"url"`
+	Created    bool   `json:"created"`
+	OpenedWeb  bool   `json:"opened_web"`
+	Error      string `json:"error,omitempty"`
+}
+
+type CreatePROptions struct {
+	BaseBranch string
+	Title      string
+	Body       string
+	Draft      bool
+	ForceWeb   bool
+}
+
+func OpenInBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Run()
+}
+
+func CreatePRs(rootDir string, opts CreatePROptions) ([]PRResult, error) {
+	status, err := GetLocalStatus(rootDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get local status: %w", err)
+	}
+
+	baseBranch := opts.BaseBranch
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+
+	type targetRepo struct {
+		path   string
+		branch string
+		isMeta bool
+	}
+
+	var targets []targetRepo
+
+	// Check submodules first
+	for _, sub := range status.Submodules {
+		if sub.Branch != "" && sub.Branch != "HEAD" && sub.Branch != baseBranch {
+			targets = append(targets, targetRepo{
+				path:   sub.Path,
+				branch: sub.Branch,
+				isMeta: false,
+			})
+		}
+	}
+
+	// Check meta repo
+	if status.MetaBranch != "" && status.MetaBranch != "HEAD" && status.MetaBranch != baseBranch {
+		targets = append(targets, targetRepo{
+			path:   ".",
+			branch: status.MetaBranch,
+			isMeta: true,
+		})
+	}
+
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("no submodules or meta-repo have non-base feature branches (base: %s)", baseBranch)
+	}
+
+	token := GetGHToken()
+
+	var results []PRResult
+
+	for _, target := range targets {
+		dir := rootDir
+		if !target.isMeta {
+			dir = rootDir + "/" + target.path
+		}
+
+		repoName, err := GetMetaRepoName(dir)
+		if err != nil {
+			repoName = target.path
+		}
+
+		title := opts.Title
+		if title == "" {
+			lastCommitMsg, _ := ExecGit(dir, "log", "-1", "--pretty=%s")
+			if strings.TrimSpace(lastCommitMsg) != "" {
+				title = strings.TrimSpace(lastCommitMsg)
+			} else {
+				title = fmt.Sprintf("PR for %s", target.branch)
+			}
+		}
+
+		compareURL := fmt.Sprintf("https://github.com/%s/compare/%s...%s?expand=1", repoName, baseBranch, target.branch)
+
+		res := PRResult{
+			RepoPath:   target.path,
+			RepoName:   repoName,
+			HeadBranch: target.branch,
+			BaseBranch: baseBranch,
+			URL:        compareURL,
+		}
+
+		body := opts.Body
+		if body == "" && target.isMeta {
+			var sb strings.Builder
+			sb.WriteString("### ⚡ MetaStackr Submodule Matrix\n\n")
+			sb.WriteString("| Submodule Path | Branch | Status |\n")
+			sb.WriteString("| :--- | :--- | :--- |\n")
+			for _, sub := range status.Submodules {
+				if sub.Branch != "" && sub.Branch != baseBranch {
+					sb.WriteString(fmt.Sprintf("| `%s` | `%s` | ⏳ Pending Sync |\n", sub.Path, sub.Branch))
+				}
+			}
+			sb.WriteString("\n---\n*Orchestrated by [MetaStackr](https://github.com/eliotstocker/MetaStackr)*")
+			body = sb.String()
+		}
+
+		created := false
+		if !opts.ForceWeb {
+			// 1. Try gh CLI
+			ghArgs := []string{"pr", "create", "--repo", repoName, "--base", baseBranch, "--head", target.branch, "--title", title, "--body", body}
+			if opts.Draft {
+				ghArgs = append(ghArgs, "--draft")
+			}
+
+			ghCmd := exec.Command("gh", ghArgs...)
+			ghCmd.Dir = dir
+			var ghOut, ghErrOut bytes.Buffer
+			ghCmd.Stdout = &ghOut
+			ghCmd.Stderr = &ghErrOut
+
+			if err := ghCmd.Run(); err == nil {
+				prURL := strings.TrimSpace(ghOut.String())
+				if prURL != "" {
+					res.URL = prURL
+					res.Created = true
+					created = true
+				}
+			}
+
+			// 2. Try GitHub REST API if gh CLI failed / not found
+			if !created && token != "" {
+				apiURL := fmt.Sprintf("https://api.github.com/repos/%s/pulls", repoName)
+				payload := map[string]interface{}{
+					"title": title,
+					"head":  target.branch,
+					"base":  baseBranch,
+					"body":  body,
+					"draft": opts.Draft,
+				}
+				jsonBytes, _ := json.Marshal(payload)
+
+				req, err := http.NewRequest(http.MethodPost, apiURL, bytes.NewReader(jsonBytes))
+				if err == nil {
+					req.Header.Set("Authorization", "token "+token)
+					req.Header.Set("Accept", "application/vnd.github.v3+json")
+					req.Header.Set("Content-Type", "application/json")
+
+					client := &http.Client{}
+					resp, err := client.Do(req)
+					if err == nil {
+						defer resp.Body.Close()
+						if resp.StatusCode == http.StatusCreated {
+							var apiResp struct {
+								HTMLURL string `json:"html_url"`
+							}
+							bodyBytes, _ := io.ReadAll(resp.Body)
+							_ = json.Unmarshal(bodyBytes, &apiResp)
+							if apiResp.HTMLURL != "" {
+								res.URL = apiResp.HTMLURL
+								res.Created = true
+								created = true
+							}
+						} else if resp.StatusCode == http.StatusUnprocessableEntity {
+							res.Error = "PR already exists"
+						}
+					}
+				}
+			}
+		}
+
+		// 3. Fallback to opening compare URL in browser if not created
+		if !created && res.Error == "" {
+			_ = OpenInBrowser(compareURL)
+			res.OpenedWeb = true
+		}
+
+		results = append(results, res)
+	}
+
+	return results, nil
+}
+
+type DirectPRStatus struct {
+	PRNumber int    `json:"pr_number"`
+	Status   string `json:"status"`
+	URL      string `json:"url"`
+}
+
+func GetDirectPRStatus(dir, branch string) *DirectPRStatus {
+	if branch == "" || branch == "main" || branch == "master" || branch == "HEAD" {
+		return nil
+	}
+
+	repoName, err := GetMetaRepoName(dir)
+	if err != nil {
+		return nil
+	}
+
+	// 1. Try gh CLI
+	cmd := exec.Command("gh", "pr", "view", branch, "--repo", repoName, "--json", "number,state,url")
+	cmd.Dir = dir
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err == nil {
+		var ghPR struct {
+			Number int    `json:"number"`
+			State  string `json:"state"`
+			URL    string `json:"url"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &ghPR); err == nil && ghPR.Number > 0 {
+			return &DirectPRStatus{
+				PRNumber: ghPR.Number,
+				Status:   ghPR.State,
+				URL:      ghPR.URL,
+			}
+		}
+	}
+
+	// 2. Try GitHub REST API
+	token := GetGHToken()
+	if token != "" {
+		parts := strings.Split(repoName, "/")
+		owner := parts[0]
+		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/pulls?head=%s:%s", repoName, owner, branch)
+		req, err := http.NewRequest(http.MethodGet, apiURL, nil)
+		if err == nil {
+			req.Header.Set("Authorization", "token "+token)
+			req.Header.Set("Accept", "application/vnd.github.v3+json")
+			client := &http.Client{Timeout: 3 * time.Second}
+			resp, err := client.Do(req)
+			if err == nil {
+				defer resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					var apiPRs []struct {
+						Number  int    `json:"number"`
+						State   string `json:"state"`
+						HTMLURL string `json:"html_url"`
+					}
+					bodyBytes, _ := io.ReadAll(resp.Body)
+					if err := json.Unmarshal(bodyBytes, &apiPRs); err == nil && len(apiPRs) > 0 {
+						return &DirectPRStatus{
+							PRNumber: apiPRs[0].Number,
+							Status:   strings.ToUpper(apiPRs[0].State),
+							URL:      apiPRs[0].HTMLURL,
+						}
+					}
+				}
+			}
 		}
 	}
 

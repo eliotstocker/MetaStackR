@@ -3,18 +3,39 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"metastackr/internal/db"
 )
+
+type cachedToken struct {
+	Token     string
+	ExpiresAt time.Time
+}
 
 type GitHubClient struct {
 	token      string
 	baseURL    string
 	httpClient *http.Client
+
+	appID      string
+	privateKey *rsa.PrivateKey
+	tokenCache map[int64]cachedToken
+	cacheMu    sync.RWMutex
 }
 
 func NewGitHubClient(token string) *GitHubClient {
@@ -25,7 +46,130 @@ func NewGitHubClient(token string) *GitHubClient {
 		token:      token,
 		baseURL:    "https://api.github.com",
 		httpClient: &http.Client{},
+		tokenCache: make(map[int64]cachedToken),
 	}
+}
+
+func NewGitHubClientWithApp(appID string, privateKeyPEM string, defaultToken string) (*GitHubClient, error) {
+	client := NewGitHubClient(defaultToken)
+	if appID != "" && privateKeyPEM != "" {
+		key, err := parsePrivateKey([]byte(privateKeyPEM))
+		if err != nil {
+			log.Printf("[warning] Failed to parse GITHUB_PRIVATE_KEY: %v", err)
+		} else {
+			client.appID = appID
+			client.privateKey = key
+			log.Printf("[info] Initialized GitHub App client for App ID %s", appID)
+		}
+	}
+	return client, nil
+}
+
+func parsePrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block from private key")
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		if rsaKey, ok := key.(*rsa.PrivateKey); ok {
+			return rsaKey, nil
+		}
+	}
+	return nil, fmt.Errorf("unsupported or invalid RSA private key format")
+}
+
+func generateJWT(appID string, privateKey *rsa.PrivateKey) (string, error) {
+	headerJSON := []byte(`{"alg":"RS256","typ":"JWT"}`)
+	now := time.Now().Unix()
+	claimsJSON, err := json.Marshal(map[string]interface{}{
+		"iss": appID,
+		"iat": now - 60,
+		"exp": now + 600,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+	claimsB64 := base64.RawURLEncoding.EncodeToString(claimsJSON)
+	signingInput := headerB64 + "." + claimsB64
+
+	hashed := sha256.Sum256([]byte(signingInput))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hashed[:])
+	if err != nil {
+		return "", err
+	}
+
+	sigB64 := base64.RawURLEncoding.EncodeToString(sig)
+	return signingInput + "." + sigB64, nil
+}
+
+// GetInstallationToken exchanges a GitHub App JWT for a short-lived installation access token.
+func (c *GitHubClient) GetInstallationToken(ctx context.Context, installationID int64) (string, error) {
+	if installationID == 0 || c.privateKey == nil {
+		return c.token, nil
+	}
+
+	c.cacheMu.RLock()
+	if cached, exists := c.tokenCache[installationID]; exists {
+		if time.Now().Add(2 * time.Minute).Before(cached.ExpiresAt) {
+			c.cacheMu.RUnlock()
+			return cached.Token, nil
+		}
+	}
+	c.cacheMu.RUnlock()
+
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+
+	// Double check after acquiring write lock
+	if cached, exists := c.tokenCache[installationID]; exists {
+		if time.Now().Add(2 * time.Minute).Before(cached.ExpiresAt) {
+			return cached.Token, nil
+		}
+	}
+
+	jwtStr, err := generateJWT(c.appID, c.privateKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate GitHub App JWT: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/app/installations/%d/access_tokens", c.baseURL, installationID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+jwtStr)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to request installation token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("installation token API returned HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp struct {
+		Token     string    `json:"token"`
+		ExpiresAt time.Time `json:"expires_at"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", err
+	}
+
+	c.tokenCache[installationID] = cachedToken{
+		Token:     tokenResp.Token,
+		ExpiresAt: tokenResp.ExpiresAt,
+	}
+
+	return tokenResp.Token, nil
 }
 
 type CheckRunOutput struct {
@@ -35,11 +179,11 @@ type CheckRunOutput struct {
 }
 
 type CheckRunPayload struct {
-	Name       string          `json:"name"`
-	HeadSHA    string          `json:"head_sha"`
-	Status     string          `json:"status"` // "queued", "in_progress", "completed"
-	Conclusion *string         `json:"conclusion,omitempty"` // "success", "failure", "neutral", "cancelled", etc.
-	Output     CheckRunOutput  `json:"output"`
+	Name       string         `json:"name"`
+	HeadSHA    string         `json:"head_sha"`
+	Status     string         `json:"status"`               // "queued", "in_progress", "completed"
+	Conclusion *string        `json:"conclusion,omitempty"` // "success", "failure", "neutral", "cancelled", etc.
+	Output     CheckRunOutput `json:"output"`
 }
 
 // GenerateMarkdownTable produces a markdown summary matrix of all child PR states.
@@ -78,7 +222,12 @@ func GenerateMarkdownTable(metaPR *db.MetaPR) (title string, summary string, tex
 }
 
 // UpdateMetaCheckRun creates or updates the single GitHub Check Run named 'meta-repo/sync'.
-func (c *GitHubClient) UpdateMetaCheckRun(ctx context.Context, metaRepo string, headSHA string, metaPR *db.MetaPR) error {
+func (c *GitHubClient) UpdateMetaCheckRun(ctx context.Context, metaRepo string, headSHA string, metaPR *db.MetaPR, installationID int64) error {
+	token, err := c.GetInstallationToken(ctx, installationID)
+	if err != nil {
+		return fmt.Errorf("failed to acquire token for check run: %w", err)
+	}
+
 	title, summary, markdownText := GenerateMarkdownTable(metaPR)
 
 	status := "in_progress"
@@ -96,9 +245,9 @@ func (c *GitHubClient) UpdateMetaCheckRun(ctx context.Context, metaRepo string, 
 	}
 
 	payload := CheckRunPayload{
-		Name:    "meta-repo/sync",
-		HeadSHA: headSHA,
-		Status:  status,
+		Name:       "meta-repo/sync",
+		HeadSHA:    headSHA,
+		Status:     status,
 		Conclusion: conclusion,
 		Output: CheckRunOutput{
 			Title:   title,
@@ -118,7 +267,7 @@ func (c *GitHubClient) UpdateMetaCheckRun(ctx context.Context, metaRepo string, 
 		return err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Content-Type", "application/json")
 
@@ -129,7 +278,8 @@ func (c *GitHubClient) UpdateMetaCheckRun(ctx context.Context, metaRepo string, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("GitHub API returned HTTP %d for check run update", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("GitHub API returned HTTP %d for check run update on %s: %s", resp.StatusCode, metaRepo, string(body))
 	}
 
 	return nil

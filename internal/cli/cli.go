@@ -99,6 +99,7 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newCheckoutCmd())
 	rootCmd.AddCommand(newCommitCmd())
 	rootCmd.AddCommand(newPushCmd())
+	rootCmd.AddCommand(newCreatePRCmd())
 	rootCmd.AddCommand(newSyncCmd())
 	rootCmd.AddCommand(newRebaseCmd())
 	rootCmd.AddCommand(newRetryMergeCmd())
@@ -137,10 +138,7 @@ func newStatusCmd() *cobra.Command {
 				metaRepoName = "meta-repo"
 			}
 
-			var remoteMetaPR *db.MetaPR
-			if serverURL != "" {
-				remoteMetaPR, _ = fetchRemotePRStatus(serverURL, metaRepoName, localStatus.MetaBranch)
-			}
+			remoteMetaPR := fetchRemotePRStatus(serverURL, metaRepoName, localStatus.MetaBranch)
 
 			if jsonOutput {
 				printJSON(true, "", map[string]interface{}{
@@ -162,42 +160,82 @@ func newStatusCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&serverURL, "server", os.Getenv("METASTACKR_SERVER_URL"), "MetaStackr backend server URL")
-	if serverURL == "" {
-		serverURL = "https://api.metastac.kr"
-		cmd.Flags().Set("server", serverURL)
-	}
 
 	return cmd
 }
 
-func fetchRemotePRStatus(serverURL, repo, branch string) (*db.MetaPR, error) {
-	client := &http.Client{Timeout: 3 * time.Second}
-	url := fmt.Sprintf("%s/api/v1/prs/status?repo=%s&branch=%s", serverURL, repo, branch)
-
-	resp, err := client.Get(url)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var res struct {
-		MetaPR *db.MetaPR `json:"meta_pr"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, err
-	}
-	return res.MetaPR, nil
+type RemotePRInfo struct {
+	MetaPR    *db.MetaPR
+	ServerURL string
+	Message   string
+	Reachable bool
 }
 
-func renderMergedTable(local *gitutils.MetaLocalStatus, remote *db.MetaPR) {
-	fmt.Printf("%-20s | %-12s | %-14s | %-8s | %-10s\n",
-		headerStyle.Render("Submodule Path"),
-		headerStyle.Render("Local Branch"),
-		headerStyle.Render("Local Drift"),
-		headerStyle.Render("Child PR"),
-		headerStyle.Render("PR Status"),
+func fetchRemotePRStatus(serverURL, repo, branch string) *RemotePRInfo {
+	urls := []string{}
+	if serverURL != "" {
+		urls = append(urls, serverURL)
+	}
+	if env := os.Getenv("METASTACKR_SERVER_URL"); env != "" && env != serverURL {
+		urls = append(urls, env)
+	}
+	urls = append(urls, "https://api.metastac.kr", "http://localhost:8080")
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	for _, target := range urls {
+		target = strings.TrimSuffix(target, "/")
+		url := fmt.Sprintf("%s/api/v1/prs/status?repo=%s&branch=%s", target, repo, branch)
+		resp, err := client.Get(url)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			var res struct {
+				MetaPR  *db.MetaPR `json:"meta_pr"`
+				Message string     `json:"message"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&res); err == nil {
+				resp.Body.Close()
+				return &RemotePRInfo{
+					MetaPR:    res.MetaPR,
+					ServerURL: target,
+					Message:   res.Message,
+					Reachable: true,
+				}
+			}
+			resp.Body.Close()
+		}
+	}
+	return &RemotePRInfo{Reachable: false}
+}
+
+func padRight(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
+
+func renderMergedTable(local *gitutils.MetaLocalStatus, remote *RemotePRInfo) {
+	col1Width := 24
+	col2Width := 18
+	col3Width := 18
+	col4Width := 12
+	col5Width := 14
+
+	for _, sub := range local.Submodules {
+		if w := lipgloss.Width(sub.Path) + 4; w > col1Width {
+			col1Width = w
+		}
+	}
+
+	header := fmt.Sprintf("%s | %s | %s | %s | %s",
+		padRight(headerStyle.Render("Submodule Path"), col1Width),
+		padRight(headerStyle.Render("Local Branch"), col2Width),
+		padRight(headerStyle.Render("Local Drift"), col3Width),
+		padRight(headerStyle.Render("Child PR"), col4Width),
+		padRight(headerStyle.Render("PR Status"), col5Width),
 	)
-	fmt.Println(strings.Repeat("-", 80))
+	fmt.Println(header)
+	fmt.Println(strings.Repeat("-", lipgloss.Width(header)))
 
 	if len(local.Submodules) == 0 {
 		fmt.Println(cellStyle.Render("No submodules found in current workspace."))
@@ -205,8 +243,8 @@ func renderMergedTable(local *gitutils.MetaLocalStatus, remote *db.MetaPR) {
 	}
 
 	childPRMap := make(map[string]db.ChildPR)
-	if remote != nil {
-		for _, c := range remote.ChildPRs {
+	if remote != nil && remote.MetaPR != nil {
+		for _, c := range remote.MetaPR.ChildPRs {
 			childPRMap[c.SubmodulePath] = c
 		}
 	}
@@ -227,25 +265,49 @@ func renderMergedTable(local *gitutils.MetaLocalStatus, remote *db.MetaPR) {
 		if child, exists := childPRMap[sub.Path]; exists {
 			prText = fmt.Sprintf("#%d", child.PRNumber)
 			statusText = child.Status
+		} else {
+			subDir := local.MetaRepoPath + "/" + sub.Path
+			if direct := gitutils.GetDirectPRStatus(subDir, sub.Branch); direct != nil {
+				prText = fmt.Sprintf("#%d", direct.PRNumber)
+				statusText = direct.Status
+			}
 		}
 
-		fmt.Printf("%-20s | %-12s | %-14s | %-8s | %-10s\n",
-			cellStyle.Render(sub.Path),
-			cellStyle.Render(sub.Branch),
-			drift,
-			cellStyle.Render(prText),
-			cellStyle.Render(statusText),
+		fmt.Printf("%s | %s | %s | %s | %s\n",
+			padRight(cellStyle.Render(sub.Path), col1Width),
+			padRight(cellStyle.Render(sub.Branch), col2Width),
+			padRight(cellStyle.Render(drift), col3Width),
+			padRight(cellStyle.Render(prText), col4Width),
+			padRight(cellStyle.Render(statusText), col5Width),
 		)
 	}
 
 	fmt.Println()
-	if remote != nil {
-		fmt.Printf("Backend Meta PR Status: %s (Lock Version: %d)\n",
-			lipgloss.NewStyle().Bold(true).Render(remote.Status),
-			remote.LockVersion,
+	if remote != nil && remote.MetaPR != nil {
+		fmt.Printf("Backend Meta PR Status: %s (Lock Version: %d) via %s\n",
+			lipgloss.NewStyle().Bold(true).Render(remote.MetaPR.Status),
+			remote.MetaPR.LockVersion,
+			remote.ServerURL,
 		)
+	} else if remote != nil && remote.Reachable {
+		fmt.Printf("Backend PR Status: Connected to %s (No active Meta PR tracked for branch '%s')\n", remote.ServerURL, local.MetaBranch)
+		if remote.Message == "Repo not tracked" {
+			fmt.Println(cellStyle.Render("   💡 Tip: Run 'git meta init' to register repository & GitHub webhooks with MetaStackr."))
+		}
 	} else {
-		fmt.Println("Backend PR Status: Server unreachable or no active Meta PR tracked.")
+		fmt.Println("Backend PR Status: Server unreachable (Local mode). Start 'metastackrd' or check network connection.")
+	}
+
+	var unaligned []string
+	for _, sub := range local.Submodules {
+		if sub.Branch != local.MetaBranch && sub.Branch != "" && sub.Branch != "HEAD" {
+			unaligned = append(unaligned, fmt.Sprintf("%s (%s)", sub.Path, sub.Branch))
+		}
+	}
+	if len(unaligned) > 0 {
+		fmt.Println()
+		fmt.Println(warningStyle.Render(fmt.Sprintf("⚠️ Branch Mismatch Warning: %d submodule(s) are on a different branch than meta-repo '%s': %s", len(unaligned), local.MetaBranch, strings.Join(unaligned, ", "))))
+		fmt.Println(cellStyle.Render("   Run 'git meta checkout " + local.MetaBranch + "' to align all submodules to the meta-repo branch."))
 	}
 }
 
@@ -348,6 +410,61 @@ func newPushCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newCreatePRCmd() *cobra.Command {
+	var opts gitutils.CreatePROptions
+
+	cmd := &cobra.Command{
+		Use:     "create-pr",
+		Aliases: []string{"pr", "open-pr"},
+		Short:   "Open or create GitHub Pull Requests across all modified submodules and meta-repo",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			results, err := gitutils.CreatePRs(cwd, opts)
+			if err != nil {
+				if jsonOutput {
+					printJSON(false, err.Error(), nil)
+					return nil
+				}
+				return err
+			}
+
+			if jsonOutput {
+				printJSON(true, fmt.Sprintf("Processed %d pull request target(s)", len(results)), map[string]interface{}{
+					"prs": results,
+				})
+				return nil
+			}
+
+			fmt.Println(titleStyle.Render("⚡ MetaStackR Pull Request Creator"))
+			for _, pr := range results {
+				if pr.Created {
+					fmt.Printf("  ✅ %s (%s): %s\n", pr.RepoName, pr.HeadBranch, successStyle.Render(pr.URL))
+				} else if pr.OpenedWeb {
+					fmt.Printf("  🌐 %s (%s): Opened in browser -> %s\n", pr.RepoName, pr.HeadBranch, cellStyle.Render(pr.URL))
+				} else if pr.Error != "" {
+					fmt.Printf("  ℹ️ %s (%s): %s (%s)\n", pr.RepoName, pr.HeadBranch, warningStyle.Render(pr.Error), pr.URL)
+				} else {
+					fmt.Printf("  🔗 %s (%s): %s\n", pr.RepoName, pr.HeadBranch, pr.URL)
+				}
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&opts.Title, "title", "t", "", "Pull request title (defaults to latest commit message)")
+	cmd.Flags().StringVarP(&opts.Body, "body", "b", "", "Pull request description body")
+	cmd.Flags().StringVar(&opts.BaseBranch, "base", "main", "Target base branch for pull requests")
+	cmd.Flags().BoolVarP(&opts.Draft, "draft", "d", false, "Create draft pull requests")
+	cmd.Flags().BoolVarP(&opts.ForceWeb, "web", "w", false, "Open PR compare pages in default web browser")
+
+	return cmd
 }
 
 func newSyncCmd() *cobra.Command {
@@ -505,6 +622,10 @@ MetaStackr orchestrates development across multi-repository meta-repos with Git 
   ` + "`" + `git meta push --json` + "`" + `
   Pushes submodule commits to remote origin before pushing parent commit pointer updates.
 
+- **Create/Open PRs System-Wide**:
+  ` + "`" + `git meta create-pr --json` + "`" + ` (or ` + "`" + `git meta pr` + "`" + `)
+  Creates or opens GitHub Pull Requests across modified submodules and parent meta-repo.
+
 - **Sync Upstream Changes**:
   ` + "`" + `git meta sync --json` + "`" + `
   Fetches upstream, fast-forwards/rebases local submodules, and aligns root pointers.
@@ -552,6 +673,7 @@ func newAgentsCmd() *cobra.Command {
 						"checkout":    "git meta checkout -b <branch-name> --json",
 						"commit":      "git meta commit -m \"<msg>\" --json",
 						"push":        "git meta push --json",
+						"create-pr":   "git meta create-pr --json",
 						"sync":        "git meta sync --json",
 						"rebase":      "git meta rebase <upstream-branch> --json",
 						"retry-merge": "git meta retry-merge --pr <pr-number> --json",

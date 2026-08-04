@@ -37,7 +37,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: eu-west-1
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -49,5 +49,5 @@ jobs:
         working-directory: terraform
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve -var="database_url=${{ secrets.DATABASE_URL }}"
+        run: terraform apply -auto-approve -var="database_url=${{ secrets.DATABASE_URL }}" -var="github_app_id=${{ secrets.APP_ID }}" -var="github_private_key=${{ secrets.APP_PRIVATE_KEY }}" -var="webhook_secret=${{ secrets.WEBHOOK_SECRET }}"
         working-directory: terraform

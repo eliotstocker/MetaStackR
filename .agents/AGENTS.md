@@ -31,6 +31,10 @@ MetaStackr orchestrates development across multi-repository meta-repos with Git 
   `git meta push --json`
   Pushes submodule commits to remote origin before pushing parent commit pointer updates.
 
+- **Create/Open PRs System-Wide**:
+  `git meta create-pr --json`
+  Creates or opens GitHub Pull Requests across modified submodules and parent meta-repo.
+
 - **Sync Upstream Changes**:
   `git meta sync --json`
   Fetches upstream, fast-forwards/rebases local submodules, and aligns root pointers.

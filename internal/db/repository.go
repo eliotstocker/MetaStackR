@@ -71,6 +71,25 @@ func (r *Repository) GetTrackedRepoByFullName(ctx context.Context, fullName stri
 	return repo, nil
 }
 
+func (r *Repository) GetTrackedRepoByID(ctx context.Context, id uuid.UUID) (*TrackedMetaRepo, error) {
+	query := `
+		SELECT id, repo_owner, repo_name, repo_full_name, installation_id, is_enabled, allow_code_pull, created_at
+		FROM tracked_meta_repos
+		WHERE id = $1
+	`
+	repo := &TrackedMetaRepo{}
+	err := r.db.QueryRowContext(ctx, query, id).Scan(
+		&repo.ID, &repo.RepoOwner, &repo.RepoName, &repo.RepoFullName, &repo.InstallationID, &repo.IsEnabled, &repo.AllowCodePull, &repo.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get tracked repo by id: %w", err)
+	}
+	return repo, nil
+}
+
 func (r *Repository) CreateMetaPR(ctx context.Context, pr *MetaPR) error {
 	if pr.ID == uuid.Nil {
 		pr.ID = uuid.New()
@@ -122,6 +141,67 @@ func (r *Repository) GetMetaPRByRepoAndNumber(ctx context.Context, repoFullName 
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to get meta_pr: %w", err)
+	}
+
+	children, err := r.GetChildPRsByMetaPRID(ctx, pr.ID)
+	if err != nil {
+		return nil, err
+	}
+	pr.ChildPRs = children
+
+	return pr, nil
+}
+
+func (r *Repository) GetMetaPRByRepoAndBranch(ctx context.Context, repoFullName, branchName string) (*MetaPR, error) {
+	tracked, err := r.GetTrackedRepoByFullName(ctx, repoFullName)
+	if err != nil {
+		return r.GetMetaPRByAnyBranch(ctx, branchName)
+	}
+
+	query := `
+		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, status, lock_version, created_at, updated_at
+		FROM meta_prs
+		WHERE meta_repo_id = $1 AND branch_name = $2
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+	pr := &MetaPR{}
+	err = r.db.QueryRowContext(ctx, query, tracked.ID, branchName).Scan(
+		&pr.ID, &pr.MetaRepoID, &pr.PRNumber, &pr.BranchName, &pr.BaseBranch, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return r.GetMetaPRByAnyBranch(ctx, branchName)
+		}
+		return nil, fmt.Errorf("failed to get meta_pr by branch: %w", err)
+	}
+
+	children, err := r.GetChildPRsByMetaPRID(ctx, pr.ID)
+	if err != nil {
+		return nil, err
+	}
+	pr.ChildPRs = children
+
+	return pr, nil
+}
+
+func (r *Repository) GetMetaPRByAnyBranch(ctx context.Context, branchName string) (*MetaPR, error) {
+	query := `
+		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, status, lock_version, created_at, updated_at
+		FROM meta_prs
+		WHERE branch_name = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+	pr := &MetaPR{}
+	err := r.db.QueryRowContext(ctx, query, branchName).Scan(
+		&pr.ID, &pr.MetaRepoID, &pr.PRNumber, &pr.BranchName, &pr.BaseBranch, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get meta_pr by any branch: %w", err)
 	}
 
 	children, err := r.GetChildPRsByMetaPRID(ctx, pr.ID)
