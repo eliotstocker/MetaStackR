@@ -137,31 +137,27 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 				PRNumber:    evt.PRNumber,
 				BranchName:  evt.BranchName,
 				BaseBranch:  "main",
+				HeadSHA:     evt.MergedSHA,
 				Status:      "OPEN",
 				LockVersion: 1,
 			}
 			_ = s.repo.CreateMetaPR(ctx, metaPR)
 		}
 		if metaPR != nil {
+			if evt.MergedSHA != "" && metaPR.HeadSHA != evt.MergedSHA {
+				metaPR.HeadSHA = evt.MergedSHA
+				_ = s.repo.UpdateMetaPRHeadSHA(ctx, metaPR.ID, evt.MergedSHA)
+			}
+
 			if evt.EventType == EventTypePRMerged {
 				_ = s.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "MERGED", metaPR.LockVersion)
 			} else {
 				s.autoSynthesizeChildPRs(ctx, metaPR, evt)
 			}
 
-			headSHA := evt.MergedSHA
-			if headSHA == "" {
-				for _, child := range metaPR.ChildPRs {
-					if child.HeadSHA != "" {
-						headSHA = child.HeadSHA
-						break
-					}
-				}
-			}
-
-			if headSHA != "" {
+			if metaPR.HeadSHA != "" {
 				instID := getInstID(evt.InstallationID, tracked.InstallationID)
-				if err := s.gh.UpdateMetaCheckRun(ctx, tracked.RepoFullName, headSHA, metaPR, instID); err != nil {
+				if err := s.gh.UpdateMetaCheckRun(ctx, tracked.RepoFullName, metaPR.HeadSHA, metaPR, instID); err != nil {
 					log.Printf("[checks] Error updating meta check run for %s: %v", tracked.RepoFullName, err)
 				}
 			}
@@ -202,16 +198,10 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 		parentMeta, err := s.repo.GetMetaPRByID(ctx, child.MetaPRID)
 		if err == nil && parentMeta != nil {
 			trackedMeta, err := s.repo.GetTrackedRepoByID(ctx, parentMeta.MetaRepoID)
-			if err == nil && trackedMeta != nil {
-				headSHA := evt.MergedSHA
-				if headSHA == "" {
-					headSHA = child.HeadSHA
-				}
-				if headSHA != "" {
-					instID := getInstID(evt.InstallationID, trackedMeta.InstallationID)
-					if err := s.gh.UpdateMetaCheckRun(ctx, trackedMeta.RepoFullName, headSHA, parentMeta, instID); err != nil {
-						log.Printf("[checks] Error updating meta check run for %s: %v", trackedMeta.RepoFullName, err)
-					}
+			if err == nil && trackedMeta != nil && parentMeta.HeadSHA != "" {
+				instID := getInstID(evt.InstallationID, trackedMeta.InstallationID)
+				if err := s.gh.UpdateMetaCheckRun(ctx, trackedMeta.RepoFullName, parentMeta.HeadSHA, parentMeta, instID); err != nil {
+					log.Printf("[checks] Error updating meta check run for %s: %v", trackedMeta.RepoFullName, err)
 				}
 			}
 			s.evaluateMetaPRReadiness(ctx, parentMeta)

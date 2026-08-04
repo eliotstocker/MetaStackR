@@ -104,16 +104,16 @@ func (r *Repository) CreateMetaPR(ctx context.Context, pr *MetaPR) error {
 	}
 
 	query := `
-		INSERT INTO meta_prs (id, meta_repo_id, pr_number, branch_name, base_branch, status, lock_version, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO meta_prs (id, meta_repo_id, pr_number, branch_name, base_branch, head_sha, status, lock_version, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (meta_repo_id, pr_number) 
-		DO UPDATE SET branch_name = EXCLUDED.branch_name, status = EXCLUDED.status, updated_at = NOW()
-		RETURNING id, status, lock_version, created_at, updated_at
+		DO UPDATE SET branch_name = EXCLUDED.branch_name, head_sha = CASE WHEN EXCLUDED.head_sha <> '' THEN EXCLUDED.head_sha ELSE meta_prs.head_sha END, status = EXCLUDED.status, updated_at = NOW()
+		RETURNING id, head_sha, status, lock_version, created_at, updated_at
 	`
 	err := r.db.QueryRowContext(
 		ctx, query,
-		pr.ID, pr.MetaRepoID, pr.PRNumber, pr.BranchName, pr.BaseBranch, pr.Status, pr.LockVersion, pr.CreatedAt, pr.UpdatedAt,
-	).Scan(&pr.ID, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt)
+		pr.ID, pr.MetaRepoID, pr.PRNumber, pr.BranchName, pr.BaseBranch, pr.HeadSHA, pr.Status, pr.LockVersion, pr.CreatedAt, pr.UpdatedAt,
+	).Scan(&pr.ID, &pr.HeadSHA, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt)
 
 	if err != nil {
 		return fmt.Errorf("failed to create meta_pr: %w", err)
@@ -128,13 +128,13 @@ func (r *Repository) GetMetaPRByRepoAndNumber(ctx context.Context, repoFullName 
 	}
 
 	query := `
-		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, status, lock_version, created_at, updated_at
+		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, head_sha, status, lock_version, created_at, updated_at
 		FROM meta_prs
 		WHERE meta_repo_id = $1 AND pr_number = $2
 	`
 	pr := &MetaPR{}
 	err = r.db.QueryRowContext(ctx, query, tracked.ID, prNumber).Scan(
-		&pr.ID, &pr.MetaRepoID, &pr.PRNumber, &pr.BranchName, &pr.BaseBranch, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt,
+		&pr.ID, &pr.MetaRepoID, &pr.PRNumber, &pr.BranchName, &pr.BaseBranch, &pr.HeadSHA, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -187,7 +187,7 @@ func (r *Repository) GetMetaPRByRepoAndBranch(ctx context.Context, repoFullName,
 
 func (r *Repository) GetMetaPRByAnyBranch(ctx context.Context, branchName string) (*MetaPR, error) {
 	query := `
-		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, status, lock_version, created_at, updated_at
+		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, head_sha, status, lock_version, created_at, updated_at
 		FROM meta_prs
 		WHERE branch_name = $1
 		ORDER BY created_at DESC
@@ -195,7 +195,7 @@ func (r *Repository) GetMetaPRByAnyBranch(ctx context.Context, branchName string
 	`
 	pr := &MetaPR{}
 	err := r.db.QueryRowContext(ctx, query, branchName).Scan(
-		&pr.ID, &pr.MetaRepoID, &pr.PRNumber, &pr.BranchName, &pr.BaseBranch, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt,
+		&pr.ID, &pr.MetaRepoID, &pr.PRNumber, &pr.BranchName, &pr.BaseBranch, &pr.HeadSHA, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -215,13 +215,13 @@ func (r *Repository) GetMetaPRByAnyBranch(ctx context.Context, branchName string
 
 func (r *Repository) GetMetaPRByID(ctx context.Context, id uuid.UUID) (*MetaPR, error) {
 	query := `
-		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, status, lock_version, created_at, updated_at
+		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, head_sha, status, lock_version, created_at, updated_at
 		FROM meta_prs
 		WHERE id = $1
 	`
 	pr := &MetaPR{}
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&pr.ID, &pr.MetaRepoID, &pr.PRNumber, &pr.BranchName, &pr.BaseBranch, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt,
+		&pr.ID, &pr.MetaRepoID, &pr.PRNumber, &pr.BranchName, &pr.BaseBranch, &pr.HeadSHA, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -257,6 +257,16 @@ func (r *Repository) UpdateMetaPRStatusWithLock(ctx context.Context, id uuid.UUI
 		return ErrOptimisticLockConflict
 	}
 	return nil
+}
+
+func (r *Repository) UpdateMetaPRHeadSHA(ctx context.Context, id uuid.UUID, headSHA string) error {
+	query := `
+		UPDATE meta_prs
+		SET head_sha = $1, updated_at = NOW()
+		WHERE id = $2
+	`
+	_, err := r.db.ExecContext(ctx, query, headSHA, id)
+	return err
 }
 
 func (r *Repository) UpsertChildPR(ctx context.Context, child *ChildPR) error {
@@ -418,7 +428,7 @@ func (r *Repository) CreateMergeAuditLog(ctx context.Context, metaPRID uuid.UUID
 
 func (r *Repository) GetPendingReconcileMetaPRs(ctx context.Context) ([]MetaPR, error) {
 	query := `
-		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, status, lock_version, created_at, updated_at
+		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, head_sha, status, lock_version, created_at, updated_at
 		FROM meta_prs
 		WHERE status IN ('SYNCING', 'MERGING')
 		ORDER BY updated_at ASC
@@ -433,7 +443,7 @@ func (r *Repository) GetPendingReconcileMetaPRs(ctx context.Context) ([]MetaPR, 
 	for rows.Next() {
 		var pr MetaPR
 		if err := rows.Scan(
-			&pr.ID, &pr.MetaRepoID, &pr.PRNumber, &pr.BranchName, &pr.BaseBranch, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt,
+			&pr.ID, &pr.MetaRepoID, &pr.PRNumber, &pr.BranchName, &pr.BaseBranch, &pr.HeadSHA, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
