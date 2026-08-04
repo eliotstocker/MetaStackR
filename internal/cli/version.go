@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -20,7 +21,11 @@ func newVersionCmd() *cobra.Command {
 				return
 			}
 			PrintBanner()
-			fmt.Printf("git-meta version %s\n", Version)
+			useCmd := "git meta"
+			if len(os.Args) > 0 && (os.Args[0] == "./git-meta" || os.Args[0] == "git-meta") && os.Getenv("GIT_EXEC_PATH") == "" {
+				useCmd = "git-meta"
+			}
+			fmt.Printf("%s version %s\n", useCmd, Version)
 		},
 	}
 }

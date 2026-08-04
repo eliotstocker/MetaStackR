@@ -72,12 +72,26 @@ func NewRootCmd() *cobra.Command {
 
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output machine-readable JSON")
 
-	rootCmd.SetVersionTemplate(GetBanner() + "git-meta version {{.Version}}\n")
+	useCmd := "git meta"
+	if len(os.Args) > 0 && (os.Args[0] == "./git-meta" || os.Args[0] == "git-meta") && os.Getenv("GIT_EXEC_PATH") == "" {
+		useCmd = "git-meta"
+	}
+
+	rootCmd.SetVersionTemplate(GetBanner() + useCmd + " version {{.Version}}\n")
 
 	origHelpFunc := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		PrintBanner()
-		origHelpFunc(cmd, args)
+		if useCmd == "git meta" {
+			b := &bytes.Buffer{}
+			cmd.SetOut(b)
+			origHelpFunc(cmd, args)
+			cmd.SetOut(os.Stdout)
+			outStr := strings.ReplaceAll(b.String(), "git-meta", "git meta")
+			fmt.Print(outStr)
+		} else {
+			origHelpFunc(cmd, args)
+		}
 	})
 
 	rootCmd.AddCommand(newStatusCmd())
