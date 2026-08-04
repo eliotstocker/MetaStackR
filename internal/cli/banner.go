@@ -7,18 +7,17 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Exact ASCII logo matching the website (web/template.html)
 var LogoLines = []string{
-	`  __  __      _         ____  _             _        ____  `,
-	` |  \/  | ___| |_ __ _ / ___|| |_ __ _  ___| | _____|  _ \ `,
-	` | |\/| |/ _ \ __/ _' |\___ \| __/ _' |/ __| |/ / _ \ |_) |`,
-	` | |  | |  __/ || (_| | ___) | || (_| | (__|   <  __/  _ < `,
-	` |_|  |_|\___|\__\__,_||____/ \__\__,_|\___|_|\_\___|_| \_\`,
+	`_  _ ____ ___ ____ ____ ___ ____ ____ _  _ ____`,
+	`|\/| |___  |  |__| [__   |  |__| |    |_/  |__/`,
+	`|  | |___  |  |  | ___]  |  |  | |___ | \_ |  \ `,
 }
 
 // Colors matching website linear-gradient(90deg, #00FF88, #FACC15)
 const (
-	StartR, StartG, StartB = 0, 255, 136   // #00FF88 (Neon Emerald)
-	EndR, EndG, EndB       = 250, 204, 21   // #FACC15 (Bright Yellow)
+	StartR, StartG, StartB = 0, 255, 136  // #00FF88 (Neon Emerald)
+	EndR, EndG, EndB       = 250, 204, 21 // #FACC15 (Bright Yellow)
 )
 
 // GetBanner returns the colored ASCII logo string with a horizontal gradient matching the website
