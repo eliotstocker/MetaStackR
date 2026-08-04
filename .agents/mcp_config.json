@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "vibestackr": {
+      "command": "npx",
+      "args": [
+        "vibestackr",
+        "mcp"
+      ]
+    }
+  }
+}
