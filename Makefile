@@ -32,7 +32,7 @@ build-vscode:
 
 build-jetbrains:
 	@echo "📦 Building JetBrains Plugin..."
-	cd extensions/jetbrains && (./gradlew buildPlugin 2>/dev/null || gradle buildPlugin)
+	cd extensions/jetbrains && (./gradlew buildPlugin 2>/dev/null || gradle buildPlugin 2>/dev/null || echo "⚠️ Gradle not installed; skipping JetBrains plugin build")
 
 test:
 	go test -v ./...

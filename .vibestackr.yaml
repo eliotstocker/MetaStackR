@@ -40,3 +40,25 @@ services:
       type: http
       url: "http://localhost:8081"
     note: "http://localhost:8081"
+
+  - name: chrome-extension
+    cwd: .
+    command: make
+    args: ["build-chrome"]
+    oneShot: true
+    note: "Packages metastackr-chrome.zip"
+
+  - name: vscode-extension
+    cwd: .
+    command: make
+    args: ["build-vscode"]
+    oneShot: true
+    note: "Packages metastackr-vscode.vsix"
+
+  - name: jetbrains-plugin
+    cwd: .
+    command: make
+    args: ["build-jetbrains"]
+    oneShot: true
+    note: "Builds JetBrains plugin ZIP distribution"
+

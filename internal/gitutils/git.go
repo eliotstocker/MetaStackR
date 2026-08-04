@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -348,10 +349,36 @@ func RegisterGitHubWebhook(rootDir, targetURL, secret, token string) error {
 		defer resp.Body.Close()
 
 		if resp.StatusCode >= 400 {
-			var errResp map[string]interface{}
-			_ = json.NewDecoder(resp.Body).Decode(&errResp)
-			if msg, ok := errResp["message"].(string); ok {
-				return fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, msg)
+			var errResp struct {
+				Message string `json:"message"`
+				Errors  []struct {
+					Resource string `json:"resource"`
+					Code     string `json:"code"`
+					Message  string `json:"message"`
+				} `json:"errors"`
+			}
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			_ = json.Unmarshal(bodyBytes, &errResp)
+
+			if resp.StatusCode == http.StatusUnprocessableEntity || resp.StatusCode == http.StatusConflict {
+				isAlreadyExists := false
+				if strings.Contains(strings.ToLower(errResp.Message), "already exists") || strings.EqualFold(errResp.Message, "Validation Failed") {
+					isAlreadyExists = true
+				}
+				for _, e := range errResp.Errors {
+					if strings.Contains(strings.ToLower(e.Message), "already exists") {
+						isAlreadyExists = true
+						break
+					}
+				}
+				if isAlreadyExists {
+					fmt.Printf("  ℹ️ Webhook already registered for repository '%s'. Continuing...\n", name)
+					return nil
+				}
+			}
+
+			if errResp.Message != "" {
+				return fmt.Errorf("GitHub API returned status %d: %s", resp.StatusCode, errResp.Message)
 			}
 			return fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
 		}

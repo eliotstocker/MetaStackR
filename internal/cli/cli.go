@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -470,6 +471,71 @@ func newRetryMergeCmd() *cobra.Command {
 	return cmd
 }
 
+func GetAgentsMDContent() string {
+	return `# Repository Agent Guidelines
+
+This repository is a **Meta-Repo** managed by **MetaStackr** (` + "`" + `git-meta` + "`" + `).
+
+## About MetaStackr
+MetaStackr orchestrates development across multi-repository meta-repos with Git submodules. It coordinates local workflows, tracks submodule drift, synchronizes PRs, and handles atomic cascade merges on GitHub.
+
+## Rules for AI Agents
+- **Do NOT run raw ` + "`" + `git checkout` + "`" + ` or ` + "`" + `git commit` + "`" + ` commands directly inside nested submodule directories.**
+  - Running raw git commands directly inside submodules breaks pointer alignment and creates state drift.
+- **Use ` + "`" + `git-meta` + "`" + ` for all multi-repo operations.**
+  - Use ` + "`" + `git-meta` + "`" + ` commands to manage branches, commits, pushes, and synchronization across the meta-repo and submodules.
+- **Always supply ` + "`" + `--json` + "`" + ` to ` + "`" + `git-meta` + "`" + ` CLI commands for deterministic state parsing.**
+  - All ` + "`" + `git-meta` + "`" + ` subcommands accept ` + "`" + `--json` + "`" + ` to return structured JSON payloads.
+
+## Key Operations
+
+- **Inspect State & Submodule Drift**:
+  ` + "`" + `git meta status --json` + "`" + `
+  Returns local submodule drift (uncommitted/unpushed changes) merged with remote Meta PR status.
+
+- **Switch/Create Branches System-Wide**:
+  ` + "`" + `git meta checkout -b <branch-name> --json` + "`" + `
+  Safely creates or switches branches across the parent meta-repo and all submodules.
+
+- **Atomic Commits Across Submodules**:
+  ` + "`" + `git meta commit -m "<message>" --json` + "`" + `
+  Creates coordinated commits in all modified submodules and updates parent commit pointers.
+
+- **Push Changes (Bottom-Up Enforcement)**:
+  ` + "`" + `git meta push --json` + "`" + `
+  Pushes submodule commits to remote origin before pushing parent commit pointer updates.
+
+- **Sync Upstream Changes**:
+  ` + "`" + `git meta sync --json` + "`" + `
+  Fetches upstream, fast-forwards/rebases local submodules, and aligns root pointers.
+
+- **Two-Phase Rebase**:
+  ` + "`" + `git meta rebase <upstream-branch> --json` + "`" + `
+  Rebases child submodules first, then parent meta-repo references.
+
+- **Retry Cascade Merges**:
+  ` + "`" + `git meta retry-merge --pr <pr-number> --json` + "`" + `
+  Re-triggers cascade merges on partially failed PRs.
+`
+}
+
+func WriteAgentsMD(repoDir string) error {
+	content := GetAgentsMDContent()
+
+	rootPath := filepath.Join(repoDir, "AGENTS.md")
+	if err := os.WriteFile(rootPath, []byte(content), 0644); err != nil {
+		return err
+	}
+
+	agentsDir := filepath.Join(repoDir, ".agents")
+	if err := os.MkdirAll(agentsDir, 0755); err == nil {
+		dotAgentsPath := filepath.Join(agentsDir, "AGENTS.md")
+		_ = os.WriteFile(dotAgentsPath, []byte(content), 0644)
+	}
+
+	return nil
+}
+
 func newAgentsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "agents",
@@ -482,28 +548,19 @@ func newAgentsCmd() *cobra.Command {
 						"Always supply --json to git-meta CLI commands for deterministic state parsing.",
 					},
 					"operations": map[string]string{
-						"status":   "git meta status --json",
-						"checkout": "git meta checkout -b <branch-name> --json",
-						"commit":   "git meta commit -m \"<msg>\" --json",
-						"sync":     "git meta sync --json",
+						"status":      "git meta status --json",
+						"checkout":    "git meta checkout -b <branch-name> --json",
+						"commit":      "git meta commit -m \"<msg>\" --json",
+						"push":        "git meta push --json",
+						"sync":        "git meta sync --json",
+						"rebase":      "git meta rebase <upstream-branch> --json",
+						"retry-merge": "git meta retry-merge --pr <pr-number> --json",
 					},
 				})
 				return nil
 			}
 
-			fmt.Println(`# Repository Agent Guidelines
-
-This repository is a **Meta-Repo** managed by ` + "`" + `git-meta` + "`" + `.
-
-## Rules for AI Agents
-- Do NOT run raw ` + "`" + `git checkout` + "`" + ` or ` + "`" + `git commit` + "`" + ` commands directly inside nested submodule directories.
-- Always supply ` + "`" + `--json` + "`" + ` to ` + "`" + `git-meta` + "`" + ` CLI commands for deterministic state parsing.
-
-## Key Operations
-- Inspect state: ` + "`" + `git meta status --json` + "`" + `
-- Switch/create branches: ` + "`" + `git meta checkout -b <branch-name> --json` + "`" + `
-- Commit changes across system: ` + "`" + `git meta commit -m "<msg>" --json` + "`" + `
-- Sync upstream changes: ` + "`" + `git meta sync --json` + "`")
+			fmt.Println(GetAgentsMDContent())
 			return nil
 		},
 	}
@@ -675,6 +732,24 @@ func newInitCmd() *cobra.Command {
 				}
 				return err
 			}
+			if !jsonOutput {
+				fmt.Println("  ✅ GitHub webhooks registered successfully.")
+			}
+
+			// 4. Create/update AGENTS.md guidelines
+			if !jsonOutput {
+				fmt.Println("\n4. Writing AGENTS.md guidelines...")
+			}
+			err = WriteAgentsMD(cwd)
+			if err != nil {
+				if jsonOutput {
+					printJSON(false, fmt.Sprintf("Failed to write AGENTS.md: %v", err), nil)
+				}
+				return err
+			}
+			if !jsonOutput {
+				fmt.Println("  ✅ AGENTS.md guidelines written successfully.")
+			}
 
 			if !jsonOutput {
 				fmt.Printf("\n🎉 Onboarding Complete! MetaStackr is fully set up for this repository.\n")
@@ -684,6 +759,7 @@ func newInitCmd() *cobra.Command {
 					"repo_name":             repoName,
 					"hooks_installed":       true,
 					"webhooks_registered":   true,
+					"agents_md_created":     true,
 					"server_registered":     serverRegistered,
 					"server_register_error": regErrMsg,
 					"webhook_url":           webhookURL,
