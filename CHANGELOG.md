@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/eliotstocker/MetaStackR/compare/v1.0.0...v1.0.1) (2026-08-04)
+
+
+### Bug Fixes
+
+* **ci:** configure S3 remote backend for terraform state ([eb6f03c](https://github.com/eliotstocker/MetaStackR/commit/eb6f03cd5f954afaea2998161e5bd38087518289))
+
 # 1.0.0 (2026-08-04)
 
 
