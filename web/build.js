@@ -44,5 +44,12 @@ const configDetailsOutput = template
 
 fs.writeFileSync(CONFIG_DETAILS_PATH, configDetailsOutput)
 
+const INSTALL_SCRIPT_SRC = path.join(SITE_DIR, '..', 'install.sh')
+const INSTALL_SCRIPT_DEST = path.join(SITE_DIR, 'install.sh')
+if (fs.existsSync(INSTALL_SCRIPT_SRC)) {
+  fs.copyFileSync(INSTALL_SCRIPT_SRC, INSTALL_SCRIPT_DEST)
+  console.log(`[site] copied ${INSTALL_SCRIPT_DEST}`)
+}
+
 console.log(`[site] built ${OUTPUT_PATH}`)
 console.log(`[site] built ${CONFIG_DETAILS_PATH}`)
