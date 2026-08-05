@@ -1,15 +1,88 @@
+/* MetaStackr Light & Dark Mode System - GitHub Theme Adaptation */
+:root {
+  --ms-bg-default: var(--bgColor-default, var(--color-canvas-default, #ffffff));
+  --ms-bg-subtle: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+  --ms-fg-default: var(--fgColor-default, var(--color-fg-default, #1f2328));
+  --ms-fg-muted: var(--fgColor-muted, var(--color-fg-muted, #636c76));
+  --ms-fg-accent: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  --ms-border-default: var(--borderColor-default, var(--color-border-default, #d0d7de));
+  --ms-border-muted: var(--borderColor-muted, var(--color-border-muted, hsla(210,18%,87%,1)));
+  --ms-neutral-muted: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(175,184,193,0.2)));
+  --ms-shadow: var(--shadow-resting-small, var(--color-shadow-small, 0 1px 0 rgba(31,35,40,0.04)));
+
+  --ms-state-open-bg: var(--bgColor-attention-muted, var(--color-attention-subtle, #fff8c5));
+  --ms-state-open-fg: var(--fgColor-attention, var(--color-attention-fg, #9a6700));
+  --ms-state-open-border: var(--borderColor-attention-muted, var(--color-attention-border, rgba(210,153,34,0.4)));
+
+  --ms-state-merged-bg: var(--bgColor-open-muted, var(--color-open-subtle, #dafbe1));
+  --ms-state-merged-fg: var(--fgColor-open, var(--color-open-fg, #1a7f37));
+  --ms-state-merged-border: var(--borderColor-open-muted, var(--color-open-border, rgba(46,160,67,0.4)));
+
+  --ms-state-failed-bg: var(--bgColor-danger-muted, var(--color-danger-subtle, #ffebe9));
+  --ms-state-failed-fg: var(--fgColor-danger, var(--color-danger-fg, #cf222e));
+  --ms-state-failed-border: var(--borderColor-danger-muted, var(--color-danger-border, rgba(255,129,130,0.4)));
+}
+
+[data-color-mode="dark"],
+[data-dark-theme],
+.dark,
+html[data-color-mode="dark"] {
+  --ms-bg-default: var(--bgColor-default, var(--color-canvas-default, #0d1117));
+  --ms-bg-subtle: var(--bgColor-muted, var(--color-canvas-subtle, #161b22));
+  --ms-fg-default: var(--fgColor-default, var(--color-fg-default, #e6edf3));
+  --ms-fg-muted: var(--fgColor-muted, var(--color-fg-muted, #848d97));
+  --ms-fg-accent: var(--fgColor-accent, var(--color-accent-fg, #2f81f7));
+  --ms-border-default: var(--borderColor-default, var(--color-border-default, #30363d));
+  --ms-border-muted: var(--borderColor-muted, var(--color-border-muted, #21262d));
+  --ms-neutral-muted: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(110,118,129,0.4)));
+
+  --ms-state-open-bg: var(--bgColor-attention-muted, var(--color-attention-subtle, rgba(187,128,9,0.15)));
+  --ms-state-open-fg: var(--fgColor-attention, var(--color-attention-fg, #d29922));
+  --ms-state-open-border: var(--borderColor-attention-muted, var(--color-attention-border, rgba(210,153,34,0.4)));
+
+  --ms-state-merged-bg: var(--bgColor-open-muted, var(--color-open-subtle, rgba(46,160,67,0.15)));
+  --ms-state-merged-fg: var(--fgColor-open, var(--color-open-fg, #3fb950));
+  --ms-state-merged-border: var(--borderColor-open-muted, var(--color-open-border, rgba(63,185,80,0.4)));
+
+  --ms-state-failed-bg: var(--bgColor-danger-muted, var(--color-danger-subtle, rgba(248,81,73,0.15)));
+  --ms-state-failed-fg: var(--fgColor-danger, var(--color-danger-fg, #f85149));
+  --ms-state-failed-border: var(--borderColor-danger-muted, var(--color-danger-border, rgba(248,81,73,0.4)));
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-color-mode="auto"] {
+    --ms-bg-default: var(--bgColor-default, var(--color-canvas-default, #0d1117));
+    --ms-bg-subtle: var(--bgColor-muted, var(--color-canvas-subtle, #161b22));
+    --ms-fg-default: var(--fgColor-default, var(--color-fg-default, #e6edf3));
+    --ms-fg-muted: var(--fgColor-muted, var(--color-fg-muted, #848d97));
+    --ms-fg-accent: var(--fgColor-accent, var(--color-accent-fg, #2f81f7));
+    --ms-border-default: var(--borderColor-default, var(--color-border-default, #30363d));
+    --ms-border-muted: var(--borderColor-muted, var(--color-border-muted, #21262d));
+    --ms-neutral-muted: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(110,118,129,0.4)));
+
+    --ms-state-open-bg: var(--bgColor-attention-muted, var(--color-attention-subtle, rgba(187,128,9,0.15)));
+    --ms-state-open-fg: var(--fgColor-attention, var(--color-attention-fg, #d29922));
+
+    --ms-state-merged-bg: var(--bgColor-open-muted, var(--color-open-subtle, rgba(46,160,67,0.15)));
+    --ms-state-merged-fg: var(--fgColor-open, var(--color-open-fg, #3fb950));
+
+    --ms-state-failed-bg: var(--bgColor-danger-muted, var(--color-danger-subtle, rgba(248,81,73,0.15)));
+    --ms-state-failed-fg: var(--fgColor-danger, var(--color-danger-fg, #f85149));
+  }
+}
+
 #metastackr-header-banner {
-  background: var(--color-canvas-subtle, #f6f8fa);
-  border: 1px solid var(--color-border-default, #d0d7de);
+  background: var(--ms-bg-subtle);
+  border: 1px solid var(--ms-border-default);
   border-radius: 6px;
   padding: 12px 16px;
   margin-bottom: 20px;
-  color: var(--color-fg-default, #1f2328);
+  color: var(--ms-fg-default);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: var(--color-shadow-small, 0 1px 0 rgba(31,35,40,0.04));
+  box-shadow: var(--ms-shadow);
 }
 
 .metastackr-banner-inner {
@@ -21,7 +94,7 @@
 
 .metastackr-logo {
   font-weight: 600;
-  color: var(--color-accent-fg, #0969da);
+  color: var(--ms-fg-accent);
   font-size: 14px;
 }
 
@@ -31,24 +104,24 @@
 }
 
 .metastackr-status strong {
-  color: var(--color-attention-fg, #9a6700);
+  color: var(--ms-state-open-fg);
 }
 
 .metastackr-meta {
   font-size: 12px;
-  color: var(--color-fg-muted, #636c76);
+  color: var(--ms-fg-muted);
 }
 
-/* Submodules Panel Grid - GitHub Theme */
+/* Submodules Panel Grid */
 .metastackr-panel {
-  background: var(--color-canvas-default, #ffffff);
-  border: 1px solid var(--color-border-default, #d0d7de);
+  background: var(--ms-bg-default);
+  border: 1px solid var(--ms-border-default);
   border-radius: 6px;
   padding: 0;
   margin-bottom: 24px;
-  color: var(--color-fg-default, #1f2328);
+  color: var(--ms-fg-default);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
-  box-shadow: var(--color-shadow-small, 0 1px 0 rgba(31,35,40,0.04));
+  box-shadow: var(--ms-shadow);
 }
 
 .metastackr-panel-header {
@@ -56,8 +129,8 @@
   justify-content: space-between;
   align-items: center;
   padding: 16px;
-  background: var(--color-canvas-subtle, #f6f8fa);
-  border-bottom: 1px solid var(--color-border-default, #d0d7de);
+  background: var(--ms-bg-subtle);
+  border-bottom: 1px solid var(--ms-border-default);
   border-top-left-radius: 6px;
   border-top-right-radius: 6px;
 }
@@ -72,15 +145,15 @@
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: var(--color-fg-default, #1f2328);
+  color: var(--ms-fg-default);
   display: flex;
   align-items: center;
 }
 
 .metastackr-lock-badge {
   font-size: 12px;
-  color: var(--color-fg-muted, #636c76);
-  background: var(--color-neutral-muted, rgba(175,184,193,0.2));
+  color: var(--ms-fg-muted);
+  background: var(--ms-neutral-muted);
   padding: 2px 8px;
   border-radius: 12px;
 }
@@ -101,16 +174,16 @@
 .metastackr-grid-header {
   font-weight: 600;
   font-size: 12px;
-  color: var(--color-fg-muted, #636c76);
-  background: var(--color-canvas-subtle, #f6f8fa);
-  border-bottom: 1px solid var(--color-border-default, #d0d7de);
+  color: var(--ms-fg-muted);
+  background: var(--ms-bg-subtle);
+  border-bottom: 1px solid var(--ms-border-default);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .metastackr-grid-row {
-  background: var(--color-canvas-default, #ffffff);
-  border-bottom: 1px solid var(--color-border-muted, hsla(210,18%,87%,1));
+  background: var(--ms-bg-default);
+  border-bottom: 1px solid var(--ms-border-muted);
   font-size: 14px;
 }
 
@@ -121,20 +194,20 @@
 }
 
 .metastackr-grid-row:hover {
-  background: var(--color-canvas-subtle, #f6f8fa);
+  background: var(--ms-bg-subtle);
 }
 
 .metastackr-grid-row code {
-  background: var(--color-neutral-muted, rgba(175,184,193,0.2));
+  background: var(--ms-neutral-muted);
   padding: 2px 6px;
   border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
-  color: var(--color-fg-default, #1f2328);
+  color: var(--ms-fg-default);
 }
 
 .metastackr-grid-row a {
-  color: var(--color-accent-fg, #0969da);
+  color: var(--ms-fg-accent);
   text-decoration: none;
   font-weight: 500;
 }
@@ -146,7 +219,7 @@
 .metastackr-empty {
   padding: 24px;
   text-align: center;
-  color: var(--color-fg-muted, #636c76);
+  color: var(--ms-fg-muted);
   font-size: 14px;
 }
 
@@ -160,49 +233,49 @@
 }
 
 .state-merged {
-  background: var(--color-open-subtle, #dafbe1);
-  color: var(--color-open-fg, #1a7f37);
-  border: 1px solid var(--color-open-border, rgba(46,160,67,0.4));
+  background: var(--ms-state-merged-bg);
+  color: var(--ms-state-merged-fg);
+  border: 1px solid var(--ms-state-merged-border);
 }
 
 .state-open {
-  background: var(--color-attention-subtle, #fff8c5);
-  color: var(--color-attention-fg, #9a6700);
-  border: 1px solid var(--color-attention-border, rgba(210,153,34,0.4));
+  background: var(--ms-state-open-bg);
+  color: var(--ms-state-open-fg);
+  border: 1px solid var(--ms-state-open-border);
 }
 
 .state-failed {
-  background: var(--color-danger-subtle, #ffebe9);
-  color: var(--color-danger-fg, #cf222e);
-  border: 1px solid var(--color-danger-border, rgba(255,129,130,0.4));
+  background: var(--ms-state-failed-bg);
+  color: var(--ms-state-failed-fg);
+  border: 1px solid var(--ms-state-failed-border);
 }
 
-/* Sidebar Item - GitHub Theme */
+/* Sidebar Item */
 #metastackr-sidebar-card {
-  border: 1px solid var(--color-border-default, #d0d7de);
+  border: 1px solid var(--ms-border-default);
   border-radius: 6px;
-  background: var(--color-canvas-default, #ffffff);
+  background: var(--ms-bg-default);
   padding: 16px;
   margin-top: 16px;
-  color: var(--color-fg-default, #1f2328);
+  color: var(--ms-fg-default);
 }
 
 .metastackr-sidebar-header {
   font-weight: 600;
   font-size: 14px;
-  border-bottom: 1px solid var(--color-border-default, #d0d7de);
+  border-bottom: 1px solid var(--ms-border-default);
   padding-bottom: 8px;
   margin-bottom: 12px;
-  color: var(--color-fg-default, #1f2328);
+  color: var(--ms-fg-default);
 }
 
 .metastackr-sidebar-logo {
-  color: var(--color-accent-fg, #0969da);
+  color: var(--ms-fg-accent);
   font-weight: 600;
 }
 
 .metastackr-sidebar-body p {
   font-size: 12px;
-  color: var(--color-fg-muted, #636c76);
+  color: var(--ms-fg-muted);
   margin-bottom: 12px;
 }
