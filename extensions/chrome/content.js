@@ -3,6 +3,8 @@
 
   // GitHub uses Turbo Drive (pjax) to swap page content without full reloads
   document.addEventListener('turbo:load', initialize);
+  document.addEventListener('turbo:render', initialize);
+  
   // Fallback for direct page loads
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     initialize();
@@ -66,7 +68,6 @@
           } else if (fallbackURL) {
             tryFetch(fallbackURL, null);
           } else {
-            // Standalone or untracked fallback
             callback({
               status: 'OPEN',
               lock_version: 1,
@@ -91,18 +92,18 @@
     tryFetch('https://api.metastac.kr', 'http://localhost:8080');
   }
 
-
-
   document.addEventListener('turbo:before-visit', cleanupMetaStackrPanel);
   window.addEventListener('popstate', cleanupMetaStackrPanel);
 
   function cleanupMetaStackrPanel() {
     const container = document.getElementById('metastackr-submodules-panel');
     if (container) {
-      container.remove();
+      container.style.display = 'none';
     }
-    const prContainers = document.querySelectorAll('.js-pull-discussion-timeline, .js-discussion, #discussion_bucket');
-    prContainers.forEach(el => {
+    const nativePanels = document.querySelectorAll(
+      '.js-pull-discussion-timeline, .js-discussion, #discussion_bucket, #files, .js-diff-container, #commits_bucket, #checks_bucket, turbo-frame#files-tab-frame, [data-target="tab-container.panel"]'
+    );
+    nativePanels.forEach(el => {
       el.style.display = '';
     });
     const subTab = document.getElementById('metastackr-submodules-tab');
@@ -114,12 +115,18 @@
   }
 
   function injectSubmodulesTab(metaPR, repoFullName, prNumber) {
-    if (document.getElementById('metastackr-submodules-tab')) return;
+    if (document.getElementById('metastackr-submodules-tab')) {
+      const existingCounter = document.querySelector('#metastackr-submodules-tab [data-component="CounterLabel"]');
+      if (existingCounter && metaPR && metaPR.child_prs) {
+        existingCounter.innerText = metaPR.child_prs.length;
+      }
+      return;
+    }
 
     const tabList = document.querySelector('[class*="TabNavList"], nav[aria-label*="Pull request navigation"] div, nav[aria-label*="Pull request navigation"] ul, .tabnav-tabs, ul.tabnav-tabs');
     if (!tabList) return;
 
-    const childPRs = (metaPR && metaPR.child_prs && metaPR.child_prs.length > 0) ? metaPR.child_prs : getFallbackSubmodules(repoFullName, prNumber);
+    const childPRs = (metaPR && metaPR.child_prs) ? metaPR.child_prs : [];
 
     const subTab = document.createElement('a');
     subTab.id = 'metastackr-submodules-tab';
@@ -157,10 +164,6 @@
     tabList.appendChild(subTab);
   }
 
-  function getFallbackSubmodules(repoFullName, prNumber) {
-    return [];
-  }
-
   function showSubmodulesGrid(metaPR, childPRs) {
     let container = document.getElementById('metastackr-submodules-panel');
     if (!container) {
@@ -169,13 +172,25 @@
       container.className = 'metastackr-panel';
     }
 
-    const prContainer = document.querySelector('.js-pull-discussion-timeline, .js-discussion, #discussion_bucket');
-    if (prContainer) {
-      prContainer.style.display = 'none';
-      if (!container.parentNode) {
-        prContainer.parentNode.insertBefore(container, prContainer);
+    const nativePanels = document.querySelectorAll(
+      '.js-pull-discussion-timeline, .js-discussion, #discussion_bucket, #files, .js-diff-container, #commits_bucket, #checks_bucket, turbo-frame#files-tab-frame, [data-target="tab-container.panel"]'
+    );
+    let anchorNode = null;
+    nativePanels.forEach(el => {
+      if (el.offsetHeight > 0 || getComputedStyle(el).display !== 'none') {
+        anchorNode = el;
       }
+      el.style.display = 'none';
+    });
+
+    if (!anchorNode) {
+      anchorNode = document.querySelector('.Layout-main, #discussion_bucket, main, .repository-content');
     }
+
+    if (anchorNode && anchorNode.parentNode && container.parentNode !== anchorNode.parentNode) {
+      anchorNode.parentNode.insertBefore(container, anchorNode);
+    }
+    container.style.display = 'block';
 
     let rowsHtml = '';
     (childPRs || []).forEach(child => {
@@ -198,7 +213,7 @@
           <span class="status-badge state-${(metaPR.status || 'open').toLowerCase()}">${metaPR.status || 'OPEN'}</span>
           <span class="metastackr-lock-badge">Lock Version ${metaPR.lock_version || 1}</span>
         </div>
-        <button id="close-metastackr-panel" class="btn btn-sm">Back to Conversation</button>
+        <button id="close-metastackr-panel" class="btn btn-sm">Close Panel</button>
       </div>
       <div class="metastackr-grid">
         <div class="metastackr-grid-header">
@@ -216,11 +231,11 @@
       cleanupMetaStackrPanel();
       const tabList = document.querySelector('[class*="TabNavList"], nav[aria-label*="Pull request navigation"] div');
       if (tabList) {
-        const convTab = tabList.querySelector('a'); // First tab (Conversation)
-        if (convTab) {
-          convTab.classList.add('selected');
-          convTab.classList.add('PullRequestHeaderTabNav-module__selected__g5kH0');
-          convTab.setAttribute('aria-current', 'page');
+        const firstTab = tabList.querySelector('a:not(#metastackr-submodules-tab)');
+        if (firstTab) {
+          firstTab.classList.add('selected');
+          firstTab.classList.add('PullRequestHeaderTabNav-module__selected__g5kH0');
+          firstTab.setAttribute('aria-current', 'page');
         }
       }
     });
