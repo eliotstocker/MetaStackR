@@ -326,6 +326,7 @@ func (c *GitHubClient) UpdateMetaCheckRun(ctx context.Context, metaRepo string, 
 		return fmt.Errorf("GitHub API returned HTTP %d for check run update on %s: %s", resp.StatusCode, metaRepo, string(body))
 	}
 
+	log.Printf("[checks] Successfully posted check run 'meta-repo/sync' (status: %s) for %s SHA %s", status, metaRepo, headSHA)
 	return nil
 }
 

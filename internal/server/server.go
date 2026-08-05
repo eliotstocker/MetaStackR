@@ -130,6 +130,12 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 	tracked, err := s.repo.GetTrackedRepoByFullName(ctx, evt.Repo)
 	if err == nil && tracked != nil {
 		metaPR, err := s.repo.GetMetaPRByRepoAndNumber(ctx, evt.Repo, evt.PRNumber)
+		if (err != nil || metaPR == nil) && evt.BranchName != "" {
+			metaPR, _ = s.repo.GetMetaPRByAnyBranch(ctx, evt.BranchName)
+		}
+		if (err != nil || metaPR == nil) && evt.MergedSHA != "" {
+			metaPR, _ = s.repo.GetMetaPRByHeadSHA(ctx, evt.MergedSHA)
+		}
 		if (err != nil || metaPR == nil) && evt.PRNumber > 0 {
 			metaPR = &db.MetaPR{
 				ID:          uuid.New(),

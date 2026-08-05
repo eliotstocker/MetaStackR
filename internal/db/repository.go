@@ -213,6 +213,37 @@ func (r *Repository) GetMetaPRByAnyBranch(ctx context.Context, branchName string
 	return pr, nil
 }
 
+func (r *Repository) GetMetaPRByHeadSHA(ctx context.Context, headSHA string) (*MetaPR, error) {
+	if headSHA == "" {
+		return nil, ErrNotFound
+	}
+	query := `
+		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, head_sha, status, lock_version, created_at, updated_at
+		FROM meta_prs
+		WHERE head_sha = $1
+		ORDER BY updated_at DESC
+		LIMIT 1
+	`
+	pr := &MetaPR{}
+	err := r.db.QueryRowContext(ctx, query, headSHA).Scan(
+		&pr.ID, &pr.MetaRepoID, &pr.PRNumber, &pr.BranchName, &pr.BaseBranch, &pr.HeadSHA, &pr.Status, &pr.LockVersion, &pr.CreatedAt, &pr.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to get meta_pr by head_sha: %w", err)
+	}
+
+	children, err := r.GetChildPRsByMetaPRID(ctx, pr.ID)
+	if err != nil {
+		return nil, err
+	}
+	pr.ChildPRs = children
+
+	return pr, nil
+}
+
 func (r *Repository) GetMetaPRByID(ctx context.Context, id uuid.UUID) (*MetaPR, error) {
 	query := `
 		SELECT id, meta_repo_id, pr_number, branch_name, base_branch, head_sha, status, lock_version, created_at, updated_at
