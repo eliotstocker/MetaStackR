@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/eliotstocker/MetaStackR/compare/v1.2.0...v1.2.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* **extension:** query status API with PR number and remove 3-item hardcoded fallback ([c3cc96f](https://github.com/eliotstocker/MetaStackR/commit/c3cc96f70452564cd80ea2577682b8f9e90c5000))
+
 # [1.2.0](https://github.com/eliotstocker/MetaStackR/compare/v1.1.5...v1.2.0) (2026-08-05)
 
 
