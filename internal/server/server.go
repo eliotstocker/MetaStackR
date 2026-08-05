@@ -287,9 +287,10 @@ type PRStatusResponse struct {
 func (s *Server) handlePRStatusQuery(w http.ResponseWriter, r *http.Request) {
 	repo := r.URL.Query().Get("repo")
 	branch := r.URL.Query().Get("branch")
+	prStr := r.URL.Query().Get("pr")
 
-	if repo == "" || branch == "" {
-		http.Error(w, "missing required parameters repo or branch", http.StatusBadRequest)
+	if repo == "" {
+		http.Error(w, "missing required parameter: repo", http.StatusBadRequest)
 		return
 	}
 
@@ -303,7 +304,20 @@ func (s *Server) handlePRStatusQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metaPR, err := s.repo.GetMetaPRByRepoAndBranch(r.Context(), repo, branch)
+	var metaPR *db.MetaPR
+	var err error
+
+	if prStr != "" {
+		var prNum int
+		if _, parseErr := fmt.Sscanf(prStr, "%d", &prNum); parseErr == nil && prNum > 0 {
+			metaPR, err = s.repo.GetMetaPRByRepoAndNumber(r.Context(), repo, prNum)
+		}
+	}
+
+	if (metaPR == nil || err != nil) && branch != "" {
+		metaPR, err = s.repo.GetMetaPRByRepoAndBranch(r.Context(), repo, branch)
+	}
+
 	if err != nil || metaPR == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

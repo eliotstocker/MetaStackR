@@ -23,7 +23,7 @@
     const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name');
     const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
 
-    fetchPRStatus(repoFullName, branchName, (metaPR) => {
+    fetchPRStatus(repoFullName, prNumber, branchName, (metaPR) => {
       const activeMetaPR = metaPR || {
         status: 'OPEN',
         lock_version: 1,
@@ -36,24 +36,24 @@
 
   let activeServerURL = 'https://api.metastac.kr';
 
-  function fetchPRStatus(repo, branch, callback) {
+  function fetchPRStatus(repo, prNumber, branch, callback) {
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({ action: 'fetchPRStatus', repo, branch }, (response) => {
+      chrome.runtime.sendMessage({ action: 'fetchPRStatus', repo, prNumber, branch }, (response) => {
         if (!chrome.runtime.lastError && response && response.metaPR) {
           if (response.serverURL) activeServerURL = response.serverURL;
           callback(response.metaPR);
           return;
         }
-        directFetchPRStatus(repo, branch, callback);
+        directFetchPRStatus(repo, prNumber, branch, callback);
       });
     } else {
-      directFetchPRStatus(repo, branch, callback);
+      directFetchPRStatus(repo, prNumber, branch, callback);
     }
   }
 
-  function directFetchPRStatus(repo, branch, callback) {
+  function directFetchPRStatus(repo, prNumber, branch, callback) {
     const tryFetch = (serverURL, fallbackURL) => {
-      const url = `${serverURL}/api/v1/prs/status?repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(branch)}`;
+      const url = `${serverURL}/api/v1/prs/status?repo=${encodeURIComponent(repo)}&pr=${prNumber}&branch=${encodeURIComponent(branch)}`;
       fetch(url)
         .then(res => {
           if (!res.ok) throw new Error('Unreachable server');
@@ -158,12 +158,7 @@
   }
 
   function getFallbackSubmodules(repoFullName, prNumber) {
-    const owner = repoFullName.split('/')[0] || 'eliotstocker';
-    return [
-      { submodule_path: 'Admin Frontend', repo_full_name: `${owner}/stackr-demo-admin-frontend`, pr_number: 1, head_sha: 'test-change', status: 'OPEN' },
-      { submodule_path: 'Go Service', repo_full_name: `${owner}/stackr-demo-go-service`, pr_number: 1, head_sha: 'test-change', status: 'OPEN' },
-      { submodule_path: 'Main Frontend', repo_full_name: `${owner}/stackr-demo-main-frontend`, pr_number: 1, head_sha: 'test-change', status: 'OPEN' }
-    ];
+    return [];
   }
 
   function showSubmodulesGrid(metaPR, childPRs) {
