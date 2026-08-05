@@ -158,6 +158,14 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 				}
 			}
 
+			if metaPR.HeadSHA == "" && metaPR.PRNumber > 0 {
+				instID := getInstID(evt.InstallationID, tracked.InstallationID)
+				if fetchedSHA, err := s.gh.GetPRHeadSHA(ctx, tracked.RepoFullName, metaPR.PRNumber, instID); err == nil && fetchedSHA != "" {
+					metaPR.HeadSHA = fetchedSHA
+					_ = s.repo.UpdateMetaPRHeadSHA(ctx, metaPR.ID, fetchedSHA)
+				}
+			}
+
 			if metaPR.HeadSHA != "" {
 				instID := getInstID(evt.InstallationID, tracked.InstallationID)
 				if err := s.gh.UpdateMetaCheckRun(ctx, tracked.RepoFullName, metaPR.HeadSHA, metaPR, instID); err != nil {
@@ -203,10 +211,18 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 		parentMeta, err := s.repo.GetMetaPRByID(ctx, child.MetaPRID)
 		if err == nil && parentMeta != nil {
 			trackedMeta, err := s.repo.GetTrackedRepoByID(ctx, parentMeta.MetaRepoID)
-			if err == nil && trackedMeta != nil && parentMeta.HeadSHA != "" {
+			if err == nil && trackedMeta != nil {
 				instID := getInstID(evt.InstallationID, trackedMeta.InstallationID)
-				if err := s.gh.UpdateMetaCheckRun(ctx, trackedMeta.RepoFullName, parentMeta.HeadSHA, parentMeta, instID); err != nil {
-					log.Printf("[checks] Error updating meta check run for %s: %v", trackedMeta.RepoFullName, err)
+				if parentMeta.HeadSHA == "" && parentMeta.PRNumber > 0 {
+					if fetchedSHA, err := s.gh.GetPRHeadSHA(ctx, trackedMeta.RepoFullName, parentMeta.PRNumber, instID); err == nil && fetchedSHA != "" {
+						parentMeta.HeadSHA = fetchedSHA
+						_ = s.repo.UpdateMetaPRHeadSHA(ctx, parentMeta.ID, fetchedSHA)
+					}
+				}
+				if parentMeta.HeadSHA != "" {
+					if err := s.gh.UpdateMetaCheckRun(ctx, trackedMeta.RepoFullName, parentMeta.HeadSHA, parentMeta, instID); err != nil {
+						log.Printf("[checks] Error updating meta check run for %s: %v", trackedMeta.RepoFullName, err)
+					}
 				}
 			}
 			s.evaluateMetaPRReadiness(ctx, parentMeta)

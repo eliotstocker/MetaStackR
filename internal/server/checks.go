@@ -277,10 +277,47 @@ func (c *GitHubClient) UpdateMetaCheckRun(ctx context.Context, metaRepo string, 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("GitHub API returned HTTP %d for check run update on %s: %s", resp.StatusCode, metaRepo, string(body))
 	}
 
 	return nil
+}
+
+// GetPRHeadSHA fetches the head commit SHA for a pull request from GitHub API.
+func (c *GitHubClient) GetPRHeadSHA(ctx context.Context, repoFullName string, prNumber int, installationID int64) (string, error) {
+	token, err := c.GetInstallationToken(ctx, installationID)
+	if err != nil {
+		return "", fmt.Errorf("failed to acquire token: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/pulls/%d", c.baseURL, repoFullName, prNumber)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("GitHub API returned HTTP %d for pull request %s#%d", resp.StatusCode, repoFullName, prNumber)
+	}
+
+	var prPayload struct {
+		Head struct {
+			SHA string `json:"sha"`
+		} `json:"head"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&prPayload); err != nil {
+		return "", err
+	}
+
+	return prPayload.Head.SHA, nil
 }
