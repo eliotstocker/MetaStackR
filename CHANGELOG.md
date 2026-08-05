@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/eliotstocker/MetaStackR/compare/v1.1.3...v1.1.4) (2026-08-05)
+
+
+### Bug Fixes
+
+* **server:** dynamically fetch and save parent MetaPR HeadSHA from GitHub API if empty ([92a07f8](https://github.com/eliotstocker/MetaStackR/commit/92a07f88461b8408127b488df98a341692e7fd63))
+
 ## [1.1.3](https://github.com/eliotstocker/MetaStackR/compare/v1.1.2...v1.1.3) (2026-08-05)
 
 
