@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/eliotstocker/MetaStackR/compare/v1.1.2...v1.1.3) (2026-08-05)
+
+
+### Bug Fixes
+
+* **server:** refresh child PRs after synthesis and trigger check run update on initial child creation ([3413d02](https://github.com/eliotstocker/MetaStackR/commit/3413d0259fe978e5a76cbae8094375718a65b0a0))
+
 ## [1.1.2](https://github.com/eliotstocker/MetaStackR/compare/v1.1.1...v1.1.2) (2026-08-04)
 
 
