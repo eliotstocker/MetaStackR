@@ -1,3 +1,10 @@
+## [1.1.5](https://github.com/eliotstocker/MetaStackR/compare/v1.1.4...v1.1.5) (2026-08-05)
+
+
+### Bug Fixes
+
+* **server:** resolve installation ID via GitHub App JWT when zero ([2a02405](https://github.com/eliotstocker/MetaStackR/commit/2a024056be7ff8d7c824777252b11c1d944fdaa3))
+
 ## [1.1.4](https://github.com/eliotstocker/MetaStackR/compare/v1.1.3...v1.1.4) (2026-08-05)
 
 
