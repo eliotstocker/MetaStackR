@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/eliotstocker/MetaStackR/compare/v1.1.5...v1.2.0) (2026-08-05)
+
+
+### Features
+
+* **db,server:** add head_sha column to meta_prs and dynamic installation ID lookup ([f18f0dc](https://github.com/eliotstocker/MetaStackR/commit/f18f0dcb8bf1d03654d31444a480fad3907559b8))
+
 ## [1.1.5](https://github.com/eliotstocker/MetaStackR/compare/v1.1.4...v1.1.5) (2026-08-05)
 
 
