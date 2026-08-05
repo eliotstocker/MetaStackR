@@ -6,21 +6,21 @@
   --ms-fg-muted: var(--fgColor-muted, var(--color-fg-muted, #636c76));
   --ms-fg-accent: var(--fgColor-accent, var(--color-accent-fg, #0969da));
   --ms-border-default: var(--borderColor-default, var(--color-border-default, #d0d7de));
-  --ms-border-muted: var(--borderColor-muted, var(--color-border-muted, hsla(210,18%,87%,1)));
-  --ms-neutral-muted: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(175,184,193,0.2)));
-  --ms-shadow: var(--shadow-resting-small, var(--color-shadow-small, 0 1px 0 rgba(31,35,40,0.04)));
+  --ms-border-muted: var(--borderColor-muted, var(--color-border-muted, hsla(210, 18%, 87%, 1)));
+  --ms-neutral-muted: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(175, 184, 193, 0.2)));
+  --ms-shadow: var(--shadow-resting-small, var(--color-shadow-small, 0 1px 0 rgba(31, 35, 40, 0.04)));
 
   --ms-state-open-bg: var(--bgColor-attention-muted, var(--color-attention-subtle, #fff8c5));
   --ms-state-open-fg: var(--fgColor-attention, var(--color-attention-fg, #9a6700));
-  --ms-state-open-border: var(--borderColor-attention-muted, var(--color-attention-border, rgba(210,153,34,0.4)));
+  --ms-state-open-border: var(--borderColor-attention-muted, var(--color-attention-border, rgba(210, 153, 34, 0.4)));
 
   --ms-state-merged-bg: var(--bgColor-open-muted, var(--color-open-subtle, #dafbe1));
   --ms-state-merged-fg: var(--fgColor-open, var(--color-open-fg, #1a7f37));
-  --ms-state-merged-border: var(--borderColor-open-muted, var(--color-open-border, rgba(46,160,67,0.4)));
+  --ms-state-merged-border: var(--borderColor-open-muted, var(--color-open-border, rgba(46, 160, 67, 0.4)));
 
   --ms-state-failed-bg: var(--bgColor-danger-muted, var(--color-danger-subtle, #ffebe9));
   --ms-state-failed-fg: var(--fgColor-danger, var(--color-danger-fg, #cf222e));
-  --ms-state-failed-border: var(--borderColor-danger-muted, var(--color-danger-border, rgba(255,129,130,0.4)));
+  --ms-state-failed-border: var(--borderColor-danger-muted, var(--color-danger-border, rgba(255, 129, 130, 0.4)));
 }
 
 [data-color-mode="dark"],
@@ -34,19 +34,19 @@ html[data-color-mode="dark"] {
   --ms-fg-accent: var(--fgColor-accent, var(--color-accent-fg, #2f81f7));
   --ms-border-default: var(--borderColor-default, var(--color-border-default, #30363d));
   --ms-border-muted: var(--borderColor-muted, var(--color-border-muted, #21262d));
-  --ms-neutral-muted: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(110,118,129,0.4)));
+  --ms-neutral-muted: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(110, 118, 129, 0.4)));
 
-  --ms-state-open-bg: var(--bgColor-attention-muted, var(--color-attention-subtle, rgba(187,128,9,0.15)));
+  --ms-state-open-bg: var(--bgColor-attention-muted, var(--color-attention-subtle, rgba(187, 128, 9, 0.15)));
   --ms-state-open-fg: var(--fgColor-attention, var(--color-attention-fg, #d29922));
-  --ms-state-open-border: var(--borderColor-attention-muted, var(--color-attention-border, rgba(210,153,34,0.4)));
+  --ms-state-open-border: var(--borderColor-attention-muted, var(--color-attention-border, rgba(210, 153, 34, 0.4)));
 
-  --ms-state-merged-bg: var(--bgColor-open-muted, var(--color-open-subtle, rgba(46,160,67,0.15)));
+  --ms-state-merged-bg: var(--bgColor-open-muted, var(--color-open-subtle, rgba(46, 160, 67, 0.15)));
   --ms-state-merged-fg: var(--fgColor-open, var(--color-open-fg, #3fb950));
-  --ms-state-merged-border: var(--borderColor-open-muted, var(--color-open-border, rgba(63,185,80,0.4)));
+  --ms-state-merged-border: var(--borderColor-open-muted, var(--color-open-border, rgba(63, 185, 80, 0.4)));
 
-  --ms-state-failed-bg: var(--bgColor-danger-muted, var(--color-danger-subtle, rgba(248,81,73,0.15)));
+  --ms-state-failed-bg: var(--bgColor-danger-muted, var(--color-danger-subtle, rgba(248, 81, 73, 0.15)));
   --ms-state-failed-fg: var(--fgColor-danger, var(--color-danger-fg, #f85149));
-  --ms-state-failed-border: var(--borderColor-danger-muted, var(--color-danger-border, rgba(248,81,73,0.4)));
+  --ms-state-failed-border: var(--borderColor-danger-muted, var(--color-danger-border, rgba(248, 81, 73, 0.4)));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -58,20 +58,22 @@ html[data-color-mode="dark"] {
     --ms-fg-accent: var(--fgColor-accent, var(--color-accent-fg, #2f81f7));
     --ms-border-default: var(--borderColor-default, var(--color-border-default, #30363d));
     --ms-border-muted: var(--borderColor-muted, var(--color-border-muted, #21262d));
-    --ms-neutral-muted: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(110,118,129,0.4)));
+    --ms-neutral-muted: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(110, 118, 129, 0.4)));
 
-    --ms-state-open-bg: var(--bgColor-attention-muted, var(--color-attention-subtle, rgba(187,128,9,0.15)));
+    --ms-state-open-bg: var(--bgColor-attention-muted, var(--color-attention-subtle, rgba(187, 128, 9, 0.15)));
     --ms-state-open-fg: var(--fgColor-attention, var(--color-attention-fg, #d29922));
 
-    --ms-state-merged-bg: var(--bgColor-open-muted, var(--color-open-subtle, rgba(46,160,67,0.15)));
+    --ms-state-merged-bg: var(--bgColor-open-muted, var(--color-open-subtle, rgba(46, 160, 67, 0.15)));
     --ms-state-merged-fg: var(--fgColor-open, var(--color-open-fg, #3fb950));
 
-    --ms-state-failed-bg: var(--bgColor-danger-muted, var(--color-danger-subtle, rgba(248,81,73,0.15)));
+    --ms-state-failed-bg: var(--bgColor-danger-muted, var(--color-danger-subtle, rgba(248, 81, 73, 0.15)));
     --ms-state-failed-fg: var(--fgColor-danger, var(--color-danger-fg, #f85149));
   }
 }
 
-#metastackr-header-banner {
+#metastackr-child-pr-banner,
+#metastackr-header-banner,
+.metastackr-banner-container {
   background: var(--ms-bg-subtle);
   border: 1px solid var(--ms-border-default);
   border-radius: 6px;
@@ -94,8 +96,11 @@ html[data-color-mode="dark"] {
 
 .metastackr-logo {
   font-weight: 600;
-  color: var(--ms-fg-accent);
+  color: var(--ms-fg-default);
   font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .metastackr-status {
@@ -114,14 +119,13 @@ html[data-color-mode="dark"] {
 
 /* Submodules Panel Grid */
 .metastackr-panel {
-  background: var(--ms-bg-default);
-  border: 1px solid var(--ms-border-default);
+  width: 100%;
+  box-sizing: border-box;
   border-radius: 6px;
   padding: 0;
   margin-bottom: 24px;
   color: var(--ms-fg-default);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
-  box-shadow: var(--ms-shadow);
 }
 
 .metastackr-panel-header {
@@ -129,10 +133,6 @@ html[data-color-mode="dark"] {
   justify-content: space-between;
   align-items: center;
   padding: 16px;
-  background: var(--ms-bg-subtle);
-  border-bottom: 1px solid var(--ms-border-default);
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
 }
 
 .metastackr-title-group {
@@ -161,6 +161,9 @@ html[data-color-mode="dark"] {
 .metastackr-grid {
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--ms-border-default);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .metastackr-grid-header,

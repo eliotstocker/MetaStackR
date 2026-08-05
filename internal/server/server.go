@@ -178,6 +178,13 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 					log.Printf("[checks] Error updating meta check run for %s: %v", tracked.RepoFullName, err)
 				}
 			}
+
+			if s.gh != nil && metaPR.PRNumber > 0 {
+				instID := getInstID(evt.InstallationID, tracked.InstallationID)
+				go func() {
+					_ = s.gh.EnsureRootPRComment(context.Background(), tracked.RepoFullName, metaPR.PRNumber, metaPR, instID)
+				}()
+			}
 		}
 		return nil
 	}
@@ -230,8 +237,14 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 						log.Printf("[checks] Error updating meta check run for %s: %v", trackedMeta.RepoFullName, err)
 					}
 				}
+				if s.gh != nil {
+					go func() {
+						_ = s.gh.EnsureChildPRComment(context.Background(), child.RepoFullName, child.PRNumber, trackedMeta.RepoFullName, parentMeta.PRNumber, parentMeta.BranchName, instID)
+						_ = s.gh.EnsureRootPRComment(context.Background(), trackedMeta.RepoFullName, parentMeta.PRNumber, parentMeta, instID)
+					}()
+				}
+				s.evaluateMetaPRReadiness(ctx, parentMeta)
 			}
-			s.evaluateMetaPRReadiness(ctx, parentMeta)
 		}
 	}
 
@@ -240,6 +253,12 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 
 func (s *Server) autoSynthesizeChildPRs(ctx context.Context, metaPR *db.MetaPR, evt *NormalizedEvent) {
 	log.Printf("[synthesis] Auto-synthesizing child PRs for Meta PR %d", metaPR.PRNumber)
+	tracked, _ := s.repo.GetTrackedRepoByID(ctx, metaPR.MetaRepoID)
+	parentRepoName := ""
+	if tracked != nil {
+		parentRepoName = tracked.RepoFullName
+	}
+
 	for idx, change := range evt.ChangedFiles {
 		childPR := &db.ChildPR{
 			ID:            uuid.New(),
@@ -252,6 +271,12 @@ func (s *Server) autoSynthesizeChildPRs(ctx context.Context, metaPR *db.MetaPR, 
 			DepthLevel:    idx,
 		}
 		_ = s.repo.UpsertChildPR(ctx, childPR)
+
+		if parentRepoName != "" && s.gh != nil {
+			go func(cRepo string, pNum int) {
+				_ = s.gh.EnsureChildPRComment(context.Background(), cRepo, pNum, parentRepoName, metaPR.PRNumber, metaPR.BranchName, evt.InstallationID)
+			}(change.ChildRepo, metaPR.PRNumber)
+		}
 	}
 }
 
@@ -311,6 +336,12 @@ func (s *Server) handlePRStatusQuery(w http.ResponseWriter, r *http.Request) {
 		var prNum int
 		if _, parseErr := fmt.Sscanf(prStr, "%d", &prNum); parseErr == nil && prNum > 0 {
 			metaPR, err = s.repo.GetMetaPRByRepoAndNumber(r.Context(), repo, prNum)
+			if (metaPR == nil || err != nil) {
+				childPR, childErr := s.repo.GetChildPRByRepoAndNumber(r.Context(), repo, prNum)
+				if childErr == nil && childPR != nil {
+					metaPR, err = s.repo.GetMetaPRByID(r.Context(), childPR.MetaPRID)
+				}
+			}
 		}
 	}
 
@@ -326,6 +357,10 @@ func (s *Server) handlePRStatusQuery(w http.ResponseWriter, r *http.Request) {
 			"message": "No active Meta PR found",
 		})
 		return
+	}
+
+	if tracked, trackedErr := s.repo.GetTrackedRepoByID(r.Context(), metaPR.MetaRepoID); trackedErr == nil && tracked != nil {
+		metaPR.MetaRepoFullName = tracked.RepoFullName
 	}
 
 	w.Header().Set("Content-Type", "application/json")

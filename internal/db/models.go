@@ -46,6 +46,8 @@ type MetaPR struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 
+	MetaRepoFullName string `json:"meta_repo_full_name,omitempty"`
+
 	ChildPRs []ChildPR `json:"child_prs,omitempty"`
 }
 

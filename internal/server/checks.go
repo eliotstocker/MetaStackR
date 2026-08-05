@@ -366,3 +366,145 @@ func (c *GitHubClient) GetPRHeadSHA(ctx context.Context, repoFullName string, pr
 
 	return prPayload.Head.SHA, nil
 }
+
+// EnsureChildPRComment posts a standard comment on a child PR referencing its parent Meta PR if not already posted.
+func (c *GitHubClient) EnsureChildPRComment(ctx context.Context, childRepo string, prNumber int, parentMetaRepo string, parentPRNumber int, branchName string, installationID int64) error {
+	if prNumber <= 0 || childRepo == "" || parentMetaRepo == "" || parentPRNumber <= 0 {
+		return nil
+	}
+
+	token, err := c.GetInstallationTokenForRepo(ctx, childRepo, installationID)
+	if err != nil {
+		return fmt.Errorf("failed to acquire token for PR comment: %w", err)
+	}
+
+	marker := "<!-- metastackr-child-pr-comment -->"
+	parentURL := fmt.Sprintf("https://github.com/%s/pull/%d", parentMetaRepo, parentPRNumber)
+	commentBody := fmt.Sprintf("%s\n### ⚡ MetaStackr Orchestration\nThis Pull Request is tracked as part of Parent Meta PR **[%s#%d](%s)** (`%s`).\n\n*Automated cascade merge will execute once all child submodule PRs are approved and merged.*", marker, parentMetaRepo, parentPRNumber, parentURL, branchName)
+
+	listURL := fmt.Sprintf("%s/repos/%s/issues/%d/comments", c.baseURL, childRepo, prNumber)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to list issue comments: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var comments []struct {
+			ID   int64  `json:"id"`
+			Body string `json:"body"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&comments) == nil {
+			for _, comment := range comments {
+				if strings.Contains(comment.Body, marker) {
+					return nil
+				}
+			}
+		}
+	}
+
+	postPayload := map[string]string{"body": commentBody}
+	bodyBytes, _ := json.Marshal(postPayload)
+
+	postReq, err := http.NewRequestWithContext(ctx, http.MethodPost, listURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	postReq.Header.Set("Authorization", "Bearer "+token)
+	postReq.Header.Set("Accept", "application/vnd.github+json")
+	postReq.Header.Set("Content-Type", "application/json")
+
+	postResp, err := c.httpClient.Do(postReq)
+	if err != nil {
+		return fmt.Errorf("failed to post comment: %w", err)
+	}
+	defer postResp.Body.Close()
+
+	log.Printf("[comments] Posted MetaStackr linkage comment on %s#%d (Parent: %s#%d)", childRepo, prNumber, parentMetaRepo, parentPRNumber)
+	return nil
+}
+
+// EnsureRootPRComment posts or updates a single sticky comment on the root Meta PR with the latest matrix table.
+func (c *GitHubClient) EnsureRootPRComment(ctx context.Context, metaRepo string, prNumber int, metaPR *db.MetaPR, installationID int64) error {
+	if prNumber <= 0 || metaRepo == "" || metaPR == nil {
+		return nil
+	}
+
+	token, err := c.GetInstallationTokenForRepo(ctx, metaRepo, installationID)
+	if err != nil {
+		return fmt.Errorf("failed to acquire token for root PR comment: %w", err)
+	}
+
+	marker := "<!-- metastackr-root-pr-comment -->"
+	_, _, tableMarkdown := GenerateMarkdownTable(metaPR)
+	commentBody := fmt.Sprintf("%s\n%s", marker, tableMarkdown)
+
+	listURL := fmt.Sprintf("%s/repos/%s/issues/%d/comments", c.baseURL, metaRepo, prNumber)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to list issue comments: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var comments []struct {
+			ID   int64  `json:"id"`
+			Body string `json:"body"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&comments) == nil {
+			for _, comment := range comments {
+				if strings.Contains(comment.Body, marker) {
+					if comment.Body == commentBody {
+						return nil
+					}
+					patchURL := fmt.Sprintf("%s/repos/%s/issues/comments/%d", c.baseURL, metaRepo, comment.ID)
+					patchBytes, _ := json.Marshal(map[string]string{"body": commentBody})
+					patchReq, _ := http.NewRequestWithContext(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBytes))
+					patchReq.Header.Set("Authorization", "Bearer "+token)
+					patchReq.Header.Set("Accept", "application/vnd.github+json")
+					patchReq.Header.Set("Content-Type", "application/json")
+					if patchResp, err := c.httpClient.Do(patchReq); err == nil {
+						patchResp.Body.Close()
+						log.Printf("[comments] Updated root Meta PR comment on %s#%d", metaRepo, prNumber)
+					}
+					return nil
+				}
+			}
+		}
+	}
+
+	postPayload := map[string]string{"body": commentBody}
+	bodyBytes, _ := json.Marshal(postPayload)
+
+	postReq, err := http.NewRequestWithContext(ctx, http.MethodPost, listURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	postReq.Header.Set("Authorization", "Bearer "+token)
+	postReq.Header.Set("Accept", "application/vnd.github+json")
+	postReq.Header.Set("Content-Type", "application/json")
+
+	postResp, err := c.httpClient.Do(postReq)
+	if err != nil {
+		return fmt.Errorf("failed to post root PR comment: %w", err)
+	}
+	defer postResp.Body.Close()
+
+	log.Printf("[comments] Posted root Meta PR comment on %s#%d", metaRepo, prNumber)
+	return nil
+}
+
