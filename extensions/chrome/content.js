@@ -172,9 +172,21 @@
       container.className = 'metastackr-panel';
     }
 
-    // Target main column right below the PR tab navigation bar
-    const layoutMain = document.querySelector('.Layout-main, #repo-content-pjax-container, .repository-content');
-    if (!layoutMain) return;
+    // Target active tab panel bucket (discussion, files, commits, checks)
+    const targetPanel = document.querySelector(
+      '#discussion_bucket, .js-discussion, #files, .js-diff-container, #commits_bucket, #checks_bucket, turbo-frame#files-tab-frame'
+    );
+
+    if (targetPanel && targetPanel.parentNode) {
+      if (container.parentNode !== targetPanel.parentNode) {
+        targetPanel.parentNode.insertBefore(container, targetPanel);
+      }
+    } else {
+      const layoutMain = document.querySelector('.Layout-main');
+      if (layoutMain) {
+        layoutMain.appendChild(container);
+      }
+    }
 
     // Hide native content buckets
     const buckets = document.querySelectorAll(
@@ -184,10 +196,6 @@
       b.style.display = 'none';
     });
 
-    // Insert container inside layoutMain below the tab bar
-    if (container.parentNode !== layoutMain) {
-      layoutMain.insertBefore(container, layoutMain.firstChild);
-    }
     container.style.display = 'block';
 
     let rowsHtml = '';
