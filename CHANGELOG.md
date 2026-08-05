@@ -1,3 +1,13 @@
+## [1.2.2](https://github.com/eliotstocker/MetaStackR/compare/v1.2.1...v1.2.2) (2026-08-05)
+
+
+### Bug Fixes
+
+* **extension:** insert MetaStackr panel directly before active tab bucket below tab bar ([9602e0c](https://github.com/eliotstocker/MetaStackR/commit/9602e0c3f57550ff3171486b1de73f887545eaba))
+* **extension:** position MetaStackr panel inside Layout-main below PR header ([52baf21](https://github.com/eliotstocker/MetaStackR/commit/52baf219717c8b25f86af8fb97c808c5f85f4974))
+* **extension:** support MetaStackr tab and panel across all PR sub-pages (Files, Commits, Checks, Conversation) ([5bad438](https://github.com/eliotstocker/MetaStackR/commit/5bad438634f51d9bf1ec3038f7cc2933dc67d5f5))
+* **extension:** target turbo-frame below header for clean tab navigation and matrix rendering ([d708d33](https://github.com/eliotstocker/MetaStackR/commit/d708d33c26c3eb05e72e8b41fe0494ec39760d62))
+
 ## [1.2.1](https://github.com/eliotstocker/MetaStackR/compare/v1.2.0...v1.2.1) (2026-08-05)
 
 
