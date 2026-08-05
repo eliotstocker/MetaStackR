@@ -95,17 +95,25 @@
   document.addEventListener('turbo:before-visit', cleanupMetaStackrPanel);
   window.addEventListener('popstate', cleanupMetaStackrPanel);
 
+  function getPRContentContainer() {
+    return document.querySelector('turbo-frame#repo-content-turbo-frame') ||
+           document.querySelector('.js-issues-results') ||
+           document.querySelector('.Layout-main');
+  }
+
   function cleanupMetaStackrPanel() {
     const container = document.getElementById('metastackr-submodules-panel');
     if (container) {
       container.style.display = 'none';
     }
-    const buckets = document.querySelectorAll(
-      '#discussion_bucket, .js-discussion, #files, .js-diff-container, #commits_bucket, #checks_bucket, turbo-frame#files-tab-frame'
-    );
-    buckets.forEach(b => {
-      b.style.display = '';
-    });
+    const frame = getPRContentContainer();
+    if (frame) {
+      Array.from(frame.children).forEach(child => {
+        if (child !== container) {
+          child.style.display = '';
+        }
+      });
+    }
     const subTab = document.getElementById('metastackr-submodules-tab');
     if (subTab) {
       subTab.classList.remove('selected');
@@ -172,31 +180,15 @@
       container.className = 'metastackr-panel';
     }
 
-    // Target active tab panel bucket (discussion, files, commits, checks)
-    const targetPanel = document.querySelector(
-      '#discussion_bucket, .js-discussion, #files, .js-diff-container, #commits_bucket, #checks_bucket, turbo-frame#files-tab-frame'
-    );
+    const frame = getPRContentContainer();
+    if (!frame) return;
 
-    if (targetPanel && targetPanel.parentNode) {
-      if (container.parentNode !== targetPanel.parentNode) {
-        targetPanel.parentNode.insertBefore(container, targetPanel);
+    // Hide native tab children inside frame below header
+    Array.from(frame.children).forEach(child => {
+      if (child !== container) {
+        child.style.display = 'none';
       }
-    } else {
-      const layoutMain = document.querySelector('.Layout-main');
-      if (layoutMain) {
-        layoutMain.appendChild(container);
-      }
-    }
-
-    // Hide native content buckets
-    const buckets = document.querySelectorAll(
-      '#discussion_bucket, .js-discussion, #files, .js-diff-container, #commits_bucket, #checks_bucket, turbo-frame#files-tab-frame'
-    );
-    buckets.forEach(b => {
-      b.style.display = 'none';
     });
-
-    container.style.display = 'block';
 
     let rowsHtml = '';
     (childPRs || []).forEach(child => {
@@ -232,6 +224,11 @@
         ${rowsHtml || '<div class="metastackr-empty">No child submodules tracked for this branch</div>'}
       </div>
     `;
+
+    if (container.parentNode !== frame) {
+      frame.appendChild(container);
+    }
+    container.style.display = 'block';
 
     document.getElementById('close-metastackr-panel').addEventListener('click', () => {
       cleanupMetaStackrPanel();
