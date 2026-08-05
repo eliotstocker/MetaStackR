@@ -100,11 +100,11 @@
     if (container) {
       container.style.display = 'none';
     }
-    const nativePanels = document.querySelectorAll(
-      '.js-pull-discussion-timeline, .js-discussion, #discussion_bucket, #files, .js-diff-container, #commits_bucket, #checks_bucket, turbo-frame#files-tab-frame, [data-target="tab-container.panel"]'
+    const buckets = document.querySelectorAll(
+      '#discussion_bucket, .js-discussion, #files, .js-diff-container, #commits_bucket, #checks_bucket, turbo-frame#files-tab-frame'
     );
-    nativePanels.forEach(el => {
-      el.style.display = '';
+    buckets.forEach(b => {
+      b.style.display = '';
     });
     const subTab = document.getElementById('metastackr-submodules-tab');
     if (subTab) {
@@ -172,23 +172,21 @@
       container.className = 'metastackr-panel';
     }
 
-    const nativePanels = document.querySelectorAll(
-      '.js-pull-discussion-timeline, .js-discussion, #discussion_bucket, #files, .js-diff-container, #commits_bucket, #checks_bucket, turbo-frame#files-tab-frame, [data-target="tab-container.panel"]'
+    // Target main column right below the PR tab navigation bar
+    const layoutMain = document.querySelector('.Layout-main, #repo-content-pjax-container, .repository-content');
+    if (!layoutMain) return;
+
+    // Hide native content buckets
+    const buckets = document.querySelectorAll(
+      '#discussion_bucket, .js-discussion, #files, .js-diff-container, #commits_bucket, #checks_bucket, turbo-frame#files-tab-frame'
     );
-    let anchorNode = null;
-    nativePanels.forEach(el => {
-      if (el.offsetHeight > 0 || getComputedStyle(el).display !== 'none') {
-        anchorNode = el;
-      }
-      el.style.display = 'none';
+    buckets.forEach(b => {
+      b.style.display = 'none';
     });
 
-    if (!anchorNode) {
-      anchorNode = document.querySelector('.Layout-main, #discussion_bucket, main, .repository-content');
-    }
-
-    if (anchorNode && anchorNode.parentNode && container.parentNode !== anchorNode.parentNode) {
-      anchorNode.parentNode.insertBefore(container, anchorNode);
+    // Insert container inside layoutMain below the tab bar
+    if (container.parentNode !== layoutMain) {
+      layoutMain.insertBefore(container, layoutMain.firstChild);
     }
     container.style.display = 'block';
 
