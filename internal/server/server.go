@@ -153,6 +153,9 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 				_ = s.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "MERGED", metaPR.LockVersion)
 			} else {
 				s.autoSynthesizeChildPRs(ctx, metaPR, evt)
+				if updatedChildren, err := s.repo.GetChildPRsByMetaPRID(ctx, metaPR.ID); err == nil {
+					metaPR.ChildPRs = updatedChildren
+				}
 			}
 
 			if metaPR.HeadSHA != "" {
@@ -182,7 +185,9 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 			}
 			_ = s.repo.UpsertChildPR(ctx, child)
 		}
-	} else if err == nil && child != nil {
+	}
+	
+	if child != nil {
 		if evt.Merged {
 			child.Status = "MERGED"
 		}
