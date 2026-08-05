@@ -1,3 +1,10 @@
+## [1.2.3](https://github.com/eliotstocker/MetaStackR/compare/v1.2.2...v1.2.3) (2026-08-05)
+
+
+### Bug Fixes
+
+* lots of extension tweaks and more ([7c49b35](https://github.com/eliotstocker/MetaStackR/commit/7c49b3501e3e432c089dade4543cd40e44e2c43f))
+
 ## [1.2.2](https://github.com/eliotstocker/MetaStackR/compare/v1.2.1...v1.2.2) (2026-08-05)
 
 
