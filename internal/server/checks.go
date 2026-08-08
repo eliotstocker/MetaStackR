@@ -247,6 +247,14 @@ func (c *GitHubClient) GetInstallationToken(ctx context.Context, installationID 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
 		log.Printf("[auth] Installation token error HTTP %d: %s", resp.StatusCode, string(body))
+		fallbackToken := c.token
+		if fallbackToken == "" {
+			fallbackToken = gitutils.GetGHToken()
+		}
+		if fallbackToken != "" && (resp.StatusCode == 403 || resp.StatusCode == 429) {
+			log.Printf("[auth] GitHub App rate limit exceeded (HTTP %d). Falling back to PAT token.", resp.StatusCode)
+			return fallbackToken, nil
+		}
 		return "", fmt.Errorf("installation token API returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -554,35 +562,34 @@ func (c *GitHubClient) MergePullRequest(ctx context.Context, repoFullName string
 	}
 	bodyBytes, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return "", err
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("Content-Type", "application/json")
+	var resp *http.Response
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt*500) * time.Millisecond)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to call GitHub merge API: %w", err)
+		resp, err = c.doRequestWithPATFallback(ctx, req, token, bodyBytes)
+		if err != nil {
+			return "", fmt.Errorf("failed to call GitHub merge API: %w", err)
+		}
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			break
+		}
+
+		if (resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusUnprocessableEntity) && attempt < 4 {
+			resp.Body.Close()
+			continue
+		}
+		break
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusForbidden && token != gitutils.GetGHToken() && gitutils.GetGHToken() != "" {
-		// Retry with PAT token fallback if rate limited
-		retryReq, _ := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(bodyBytes))
-		retryReq.Header.Set("Authorization", "Bearer "+gitutils.GetGHToken())
-		retryReq.Header.Set("Accept", "application/vnd.github.v3+json")
-		retryReq.Header.Set("Content-Type", "application/json")
-		if retryResp, retryErr := c.httpClient.Do(retryReq); retryErr == nil {
-			defer retryResp.Body.Close()
-			if retryResp.StatusCode >= 200 && retryResp.StatusCode < 300 {
-				resp = retryResp
-			}
-		}
-	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
@@ -1159,6 +1166,61 @@ type SubmodulePointerUpdate struct {
 	MergedSHA     string
 }
 
+func (c *GitHubClient) doRequestWithPATFallback(ctx context.Context, req *http.Request, token string, bodyBytes []byte) (*http.Response, error) {
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	pat := gitutils.GetGHToken()
+	if (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests) && pat != "" && token != pat {
+		resp.Body.Close()
+		var reader io.Reader
+		if len(bodyBytes) > 0 {
+			reader = bytes.NewReader(bodyBytes)
+		}
+		retryReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL.String(), reader)
+		if err == nil {
+			for k, v := range req.Header {
+				retryReq.Header[k] = v
+			}
+			retryReq.Header.Set("Authorization", "Bearer "+pat)
+			if rResp, rErr := c.httpClient.Do(retryReq); rErr == nil {
+				return rResp, nil
+			}
+		}
+	}
+	return resp, nil
+}
+
+func ParseGitmodules(content string) map[string]string {
+	res := make(map[string]string)
+	lines := strings.Split(content, "\n")
+	var currentPath string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "path =") {
+			currentPath = strings.TrimSpace(strings.TrimPrefix(line, "path ="))
+		} else if strings.HasPrefix(line, "url =") && currentPath != "" {
+			rawURL := strings.TrimSpace(strings.TrimPrefix(line, "url ="))
+			rawURL = strings.TrimSuffix(rawURL, ".git")
+			parts := strings.Split(rawURL, "/")
+			if len(parts) >= 2 {
+				repoFullName := fmt.Sprintf("%s/%s", parts[len(parts)-2], parts[len(parts)-1])
+				if idx := strings.Index(repoFullName, ":"); idx != -1 {
+					repoFullName = repoFullName[idx+1:]
+				}
+				res[strings.ToLower(repoFullName)] = currentPath
+				res[strings.ToLower(currentPath)] = currentPath
+			}
+			currentPath = ""
+		}
+	}
+	return res
+}
+
 func (c *GitHubClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repoFullName string, branchName string, updates []SubmodulePointerUpdate, instID int64) error {
 	if len(updates) == 0 {
 		return nil
@@ -1169,18 +1231,29 @@ func (c *GitHubClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 		token = c.token
 	}
 
+	// 0. Fetch and parse .gitmodules from parent repo to resolve relative submodule paths
+	gitmodulesURL := fmt.Sprintf("%s/repos/%s/contents/.gitmodules?ref=%s", c.baseURL, repoFullName, branchName)
+	reqGitmodules, _ := http.NewRequestWithContext(ctx, http.MethodGet, gitmodulesURL, nil)
+	reqGitmodules.Header.Set("Accept", "application/vnd.github.v3.raw")
+	pathMap := make(map[string]string)
+	if respGitmodules, err := c.doRequestWithPATFallback(ctx, reqGitmodules, token, nil); err == nil {
+		if respGitmodules.StatusCode == http.StatusOK {
+			if bodyBytes, err := io.ReadAll(respGitmodules.Body); err == nil {
+				pathMap = ParseGitmodules(string(bodyBytes))
+			}
+		}
+		respGitmodules.Body.Close()
+	}
+
 	// 1. Get branch HEAD commit
 	refURL := fmt.Sprintf("%s/repos/%s/git/ref/heads/%s", c.baseURL, repoFullName, branchName)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, refURL, nil)
 	if err != nil {
 		return err
 	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequestWithPATFallback(ctx, req, token, nil)
 	if err != nil {
 		return err
 	}
@@ -1204,11 +1277,8 @@ func (c *GitHubClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 	// 2. Get base commit to extract tree SHA
 	commitURL := fmt.Sprintf("%s/repos/%s/git/commits/%s", c.baseURL, repoFullName, baseCommitSHA)
 	reqCommit, _ := http.NewRequestWithContext(ctx, http.MethodGet, commitURL, nil)
-	if token != "" {
-		reqCommit.Header.Set("Authorization", "Bearer "+token)
-	}
 	reqCommit.Header.Set("Accept", "application/vnd.github+json")
-	respCommit, err := c.httpClient.Do(reqCommit)
+	respCommit, err := c.doRequestWithPATFallback(ctx, reqCommit, token, nil)
 	if err != nil {
 		return err
 	}
@@ -1234,14 +1304,17 @@ func (c *GitHubClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 	var treeItems []treeItem
 	for _, up := range updates {
 		shaToUse := up.MergedSHA
-		// Attempt to fetch current HEAD of main for the submodule to guarantee pointing to merged commit
 		subRepoName := up.SubmodulePath
 		if mainSHA, err := c.GetBranchHeadSHA(ctx, subRepoName, "main", instID); err == nil && mainSHA != "" {
 			shaToUse = mainSHA
 		}
-		if shaToUse != "" {
+		treePath := up.SubmodulePath
+		if mappedPath, ok := pathMap[strings.ToLower(up.SubmodulePath)]; ok {
+			treePath = mappedPath
+		}
+		if shaToUse != "" && treePath != "" {
 			treeItems = append(treeItems, treeItem{
-				Path: up.SubmodulePath,
+				Path: treePath,
 				Mode: "160000",
 				Type: "commit",
 				SHA:  shaToUse,
@@ -1256,13 +1329,10 @@ func (c *GitHubClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 
 	postTreeURL := fmt.Sprintf("%s/repos/%s/git/trees", c.baseURL, repoFullName)
 	reqPostTree, _ := http.NewRequestWithContext(ctx, http.MethodPost, postTreeURL, bytes.NewReader(treeReqBody))
-	if token != "" {
-		reqPostTree.Header.Set("Authorization", "Bearer "+token)
-	}
 	reqPostTree.Header.Set("Accept", "application/vnd.github+json")
 	reqPostTree.Header.Set("Content-Type", "application/json")
 
-	respPostTree, err := c.httpClient.Do(reqPostTree)
+	respPostTree, err := c.doRequestWithPATFallback(ctx, reqPostTree, token, treeReqBody)
 	if err != nil {
 		return err
 	}
@@ -1285,13 +1355,10 @@ func (c *GitHubClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 
 	postCommitURL := fmt.Sprintf("%s/repos/%s/git/commits", c.baseURL, repoFullName)
 	reqPostCommit, _ := http.NewRequestWithContext(ctx, http.MethodPost, postCommitURL, bytes.NewReader(newCommitBody))
-	if token != "" {
-		reqPostCommit.Header.Set("Authorization", "Bearer "+token)
-	}
 	reqPostCommit.Header.Set("Accept", "application/vnd.github+json")
 	reqPostCommit.Header.Set("Content-Type", "application/json")
 
-	respPostCommit, err := c.httpClient.Do(reqPostCommit)
+	respPostCommit, err := c.doRequestWithPATFallback(ctx, reqPostCommit, token, newCommitBody)
 	if err != nil {
 		return err
 	}
@@ -1313,13 +1380,10 @@ func (c *GitHubClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 
 	patchRefURL := fmt.Sprintf("%s/repos/%s/git/refs/heads/%s", c.baseURL, repoFullName, branchName)
 	reqPatchRef, _ := http.NewRequestWithContext(ctx, http.MethodPatch, patchRefURL, bytes.NewReader(updateRefBody))
-	if token != "" {
-		reqPatchRef.Header.Set("Authorization", "Bearer "+token)
-	}
 	reqPatchRef.Header.Set("Accept", "application/vnd.github+json")
 	reqPatchRef.Header.Set("Content-Type", "application/json")
 
-	respPatchRef, err := c.httpClient.Do(reqPatchRef)
+	respPatchRef, err := c.doRequestWithPATFallback(ctx, reqPatchRef, token, updateRefBody)
 	if err != nil {
 		return err
 	}
