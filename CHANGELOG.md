@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/eliotstocker/MetaStackR/compare/v1.2.3...v1.3.0) (2026-08-08)
+
+
+### Features
+
+* add auto-merge policy rules, token caching, pointer alignment, and settings UI ([22197d3](https://github.com/eliotstocker/MetaStackR/commit/22197d3e5146fc4ab9cdb4911513ba97222e77d7))
+
 ## [1.2.3](https://github.com/eliotstocker/MetaStackR/compare/v1.2.2...v1.2.3) (2026-08-05)
 
 
