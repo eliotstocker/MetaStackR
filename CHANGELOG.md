@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/eliotstocker/MetaStackR/compare/v1.4.0...v1.5.0) (2026-08-08)
+
+
+### Features
+
+* **cli:** convert settings command to native git config syntax (git meta config) ([d28b667](https://github.com/eliotstocker/MetaStackR/commit/d28b6675b5b2f987e124f8d7a11c94ddfe6f536c))
+
 # [1.4.0](https://github.com/eliotstocker/MetaStackR/compare/v1.3.0...v1.4.0) (2026-08-08)
 
 
