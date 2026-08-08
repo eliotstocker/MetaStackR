@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"metastackr/internal/dag"
 	"metastackr/internal/db"
-	"metastackr/internal/server"
+	"metastackr/internal/vcs"
 )
 
 type ChildMerger interface {
@@ -28,38 +28,38 @@ func (m *MockMerger) MergePR(ctx context.Context, repo string, prNumber int, mer
 	return fmt.Sprintf("sha-%s-%d", repo, prNumber), nil
 }
 
-type RealGitHubMerger struct {
-	gh *server.GitHubClient
+type RealVCSMerger struct {
+	vcs vcs.VCSProvider
 }
 
-func NewRealGitHubMerger(gh *server.GitHubClient) *RealGitHubMerger {
-	return &RealGitHubMerger{gh: gh}
+func NewRealVCSMerger(vcsProvider vcs.VCSProvider) *RealVCSMerger {
+	return &RealVCSMerger{vcs: vcsProvider}
 }
 
-func (m *RealGitHubMerger) MergePR(ctx context.Context, repo string, prNumber int, mergeMethod string) (string, error) {
-	if m.gh == nil {
-		return "", fmt.Errorf("GitHub client is nil")
+func (m *RealVCSMerger) MergePR(ctx context.Context, repo string, prNumber int, mergeMethod string) (string, error) {
+	if m.vcs == nil {
+		return "", fmt.Errorf("VCS provider is nil")
 	}
-	return m.gh.MergePullRequest(ctx, repo, prNumber, mergeMethod, 0)
+	return m.vcs.MergePullRequest(ctx, repo, prNumber, mergeMethod, 0)
 }
 
 type Engine struct {
 	repo   *db.Repository
-	gh     *server.GitHubClient
+	vcs    vcs.VCSProvider
 	merger ChildMerger
 }
 
-func NewEngine(repo *db.Repository, gh *server.GitHubClient, merger ChildMerger) *Engine {
+func NewEngine(repo *db.Repository, vcsProvider vcs.VCSProvider, merger ChildMerger) *Engine {
 	if merger == nil {
-		if gh != nil {
-			merger = NewRealGitHubMerger(gh)
+		if vcsProvider != nil {
+			merger = NewRealVCSMerger(vcsProvider)
 		} else {
 			merger = &MockMerger{}
 		}
 	}
 	return &Engine{
 		repo:   repo,
-		gh:     gh,
+		vcs:    vcsProvider,
 		merger: merger,
 	}
 }
@@ -225,20 +225,21 @@ func (e *Engine) ExecuteCascadeMerge(ctx context.Context, metaPRID uuid.UUID) er
 	}
 
 	// Server-side Submodule Pointer Alignment on parent meta-repo branch
-	if e.gh != nil && metaPR.BranchName != "" {
-		var pointerUpdates []server.SubmodulePointerUpdate
+	if e.vcs != nil && metaPR.BranchName != "" {
+		var pointerUpdates []vcs.SubmodulePointerUpdate
 		for _, child := range metaPR.ChildPRs {
 			if child.HeadSHA != "" {
-				pointerUpdates = append(pointerUpdates, server.SubmodulePointerUpdate{
+				pointerUpdates = append(pointerUpdates, vcs.SubmodulePointerUpdate{
 					SubmodulePath: child.SubmodulePath,
-					MergedSHA:     child.HeadSHA,
+					SubmoduleRepo: child.RepoFullName,
+					NewCommitSHA:  child.HeadSHA,
 				})
 			}
 		}
 		if len(pointerUpdates) > 0 {
 			var instID int64
 			_ = e.repo.DB().QueryRowContext(ctx, "SELECT installation_id FROM tracked_meta_repos WHERE id = $1", metaPR.MetaRepoID).Scan(&instID)
-			err := e.gh.UpdateSubmodulePointersOnBranch(ctx, metaRepoName, metaPR.BranchName, pointerUpdates, instID)
+			err := e.vcs.UpdateSubmodulePointersOnBranch(ctx, metaRepoName, metaPR.BranchName, pointerUpdates, instID)
 			if err != nil {
 				log.Printf("[worker] Error: Failed to update submodule pointers on branch %s for %s: %v", metaPR.BranchName, metaRepoName, err)
 				_ = e.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "FAILED_PARTIAL", metaPR.LockVersion)

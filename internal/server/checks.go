@@ -19,10 +19,12 @@ import (
 	"sync"
 	"time"
 
-	"metastackr/internal/gitutils"
-
 	"metastackr/internal/db"
+	"metastackr/internal/gitutils"
+	"metastackr/internal/vcs"
 )
+
+type SubmodulePointerUpdate = vcs.SubmodulePointerUpdate
 
 type cachedToken struct {
 	Token     string
@@ -1214,11 +1216,6 @@ func (c *GitHubClient) GetBranchHeadSHA(ctx context.Context, repoFullName string
 	return refResp.Object.SHA, nil
 }
 
-type SubmodulePointerUpdate struct {
-	SubmodulePath string
-	MergedSHA     string
-}
-
 func (c *GitHubClient) doRequestWithPATFallback(ctx context.Context, req *http.Request, token string, bodyBytes []byte) (*http.Response, error) {
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -1356,8 +1353,11 @@ func (c *GitHubClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 	}
 	var treeItems []treeItem
 	for _, up := range updates {
-		shaToUse := up.MergedSHA
-		subRepoName := up.SubmodulePath
+		shaToUse := up.NewCommitSHA
+		subRepoName := up.SubmoduleRepo
+		if subRepoName == "" {
+			subRepoName = up.SubmodulePath
+		}
 		if mainSHA, err := c.GetBranchHeadSHA(ctx, subRepoName, "main", instID); err == nil && mainSHA != "" {
 			shaToUse = mainSHA
 		}
