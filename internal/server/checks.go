@@ -321,46 +321,38 @@ func GenerateMarkdownTable(metaPR *db.MetaPR) (title string, summary string, tex
 
 // GetInstallationTokenForRepo resolves installation ID for a repo if zero, then fetches access token.
 func (c *GitHubClient) GetInstallationTokenForRepo(ctx context.Context, repoFullName string, installationID int64) (string, error) {
-	if installationID > 0 {
-		return c.GetInstallationToken(ctx, installationID)
-	}
-
 	if c.privateKey == nil {
 		return c.token, nil
 	}
 
+	// 1. Query GitHub API for the specific installation ID of target repoFullName
 	jwtStr, err := generateJWT(c.appID, c.privateKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate GitHub App JWT: %w", err)
+	if err == nil {
+		url := fmt.Sprintf("%s/repos/%s/installation", c.baseURL, repoFullName)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err == nil {
+			req.Header.Set("Authorization", "Bearer "+jwtStr)
+			req.Header.Set("Accept", "application/vnd.github+json")
+			if resp, err := c.httpClient.Do(req); err == nil {
+				defer resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					var instResp struct {
+						ID int64 `json:"id"`
+					}
+					if json.NewDecoder(resp.Body).Decode(&instResp) == nil && instResp.ID > 0 {
+						return c.GetInstallationToken(ctx, instResp.ID)
+					}
+				}
+			}
+		}
 	}
 
-	url := fmt.Sprintf("%s/repos/%s/installation", c.baseURL, repoFullName)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+jwtStr)
-	req.Header.Set("Accept", "application/vnd.github+json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to query repo installation: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("repo installation API returned HTTP %d for %s: %s", resp.StatusCode, repoFullName, string(body))
+	// 2. Fallback to provided installationID if repo-specific lookup failed
+	if installationID > 0 {
+		return c.GetInstallationToken(ctx, installationID)
 	}
 
-	var instResp struct {
-		ID int64 `json:"id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&instResp); err != nil {
-		return "", err
-	}
-
-	return c.GetInstallationToken(ctx, instResp.ID)
+	return c.token, nil
 }
 
 // UpdateMetaCheckRun creates or updates the single GitHub Check Run named 'meta-repo/sync'.
@@ -1120,6 +1112,48 @@ func (c *GitHubClient) AreRequiredChecksPassing(ctx context.Context, repoFullNam
 	return true, nil, nil
 }
 
+func (c *GitHubClient) GetBranchHeadSHA(ctx context.Context, repoFullName string, branchName string, installationID int64) (string, error) {
+	token, err := c.GetInstallationTokenForRepo(ctx, repoFullName, installationID)
+	if err != nil || token == "" {
+		if c.token != "" {
+			token = c.token
+		} else {
+			token = gitutils.GetGHToken()
+		}
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/git/ref/heads/%s", c.baseURL, repoFullName, branchName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("HTTP %d for ref %s", resp.StatusCode, branchName)
+	}
+
+	var refResp struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&refResp); err != nil {
+		return "", err
+	}
+
+	return refResp.Object.SHA, nil
+}
+
 type SubmodulePointerUpdate struct {
 	SubmodulePath string
 	MergedSHA     string
@@ -1130,9 +1164,9 @@ func (c *GitHubClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 		return nil
 	}
 
-	token, err := c.GetInstallationToken(ctx, instID)
-	if err != nil {
-		return fmt.Errorf("failed to get installation token: %w", err)
+	token, err := c.GetInstallationTokenForRepo(ctx, repoFullName, instID)
+	if err != nil || token == "" {
+		token = c.token
 	}
 
 	// 1. Get branch HEAD commit
@@ -1199,12 +1233,20 @@ func (c *GitHubClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 	}
 	var treeItems []treeItem
 	for _, up := range updates {
-		treeItems = append(treeItems, treeItem{
-			Path: up.SubmodulePath,
-			Mode: "160000",
-			Type: "commit",
-			SHA:  up.MergedSHA,
-		})
+		shaToUse := up.MergedSHA
+		// Attempt to fetch current HEAD of main for the submodule to guarantee pointing to merged commit
+		subRepoName := up.SubmodulePath
+		if mainSHA, err := c.GetBranchHeadSHA(ctx, subRepoName, "main", instID); err == nil && mainSHA != "" {
+			shaToUse = mainSHA
+		}
+		if shaToUse != "" {
+			treeItems = append(treeItems, treeItem{
+				Path: up.SubmodulePath,
+				Mode: "160000",
+				Type: "commit",
+				SHA:  shaToUse,
+			})
+		}
 	}
 
 	treeReqBody, _ := json.Marshal(map[string]interface{}{

@@ -240,7 +240,10 @@ func (e *Engine) ExecuteCascadeMerge(ctx context.Context, metaPRID uuid.UUID) er
 			_ = e.repo.DB().QueryRowContext(ctx, "SELECT installation_id FROM tracked_meta_repos WHERE id = $1", metaPR.MetaRepoID).Scan(&instID)
 			err := e.gh.UpdateSubmodulePointersOnBranch(ctx, metaRepoName, metaPR.BranchName, pointerUpdates, instID)
 			if err != nil {
-				log.Printf("[worker] Warning: Failed to update submodule pointers on branch %s for %s: %v", metaPR.BranchName, metaRepoName, err)
+				log.Printf("[worker] Error: Failed to update submodule pointers on branch %s for %s: %v", metaPR.BranchName, metaRepoName, err)
+				_ = e.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "FAILED_PARTIAL", metaPR.LockVersion)
+				_ = e.repo.CreateMergeAuditLog(ctx, metaPR.ID, "POINTER_ALIGNMENT_FAILED", map[string]string{"error": err.Error()})
+				return fmt.Errorf("cascade merge halted: failed to update submodule pointers: %w", err)
 			} else {
 				log.Printf("[worker] Successfully updated submodule pointers on branch %s for %s", metaPR.BranchName, metaRepoName)
 			}
