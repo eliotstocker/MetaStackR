@@ -29,9 +29,13 @@ type TrackedMetaRepo struct {
 	RepoName       string    `json:"repo_name"`
 	RepoFullName   string    `json:"repo_full_name"`
 	InstallationID string    `json:"installation_id"`
-	IsEnabled      bool      `json:"is_enabled"`
-	AllowCodePull  bool      `json:"allow_code_pull"`
-	CreatedAt      time.Time `json:"created_at"`
+	IsEnabled           bool      `json:"is_enabled"`
+	AllowCodePull       bool      `json:"allow_code_pull"`
+	RequireRootApproval bool      `json:"require_root_approval"`
+	AutoMergeEnabled    bool      `json:"auto_merge_enabled"`
+	RequiredChecks      []string  `json:"required_checks"`
+	DefaultMergeMethod  string    `json:"default_merge_method"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 type MetaPR struct {
@@ -40,6 +44,7 @@ type MetaPR struct {
 	PRNumber    int       `json:"pr_number"`
 	BranchName  string    `json:"branch_name"`
 	BaseBranch  string    `json:"base_branch"`
+	MergeMethod string    `json:"merge_method"` // merge, squash, rebase
 	HeadSHA     string    `json:"head_sha"`
 	Status      string    `json:"status"` // OPEN, MERGING, MERGED, FAILED_DRIFT, FAILED_PARTIAL
 	LockVersion int       `json:"lock_version"`

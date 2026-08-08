@@ -35,9 +35,17 @@ func (h *LambdaHandler) Proxy(ctx context.Context, req events.APIGatewayV2HTTPRe
 		return events.APIGatewayV2HTTPResponse{}, err
 	}
 
+	headers := v1Resp.Headers
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	headers["Access-Control-Allow-Origin"] = "*"
+	headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+	headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode:        v1Resp.StatusCode,
-		Headers:           v1Resp.Headers,
+		Headers:           headers,
 		MultiValueHeaders: v1Resp.MultiValueHeaders,
 		Body:              v1Resp.Body,
 		IsBase64Encoded:   v1Resp.IsBase64Encoded,

@@ -65,6 +65,18 @@ make build-extensions # (Optional) Package Chrome, VS Code, & JetBrains extensio
 
 Now `git meta` works natively in your terminal!
 
+**Shell Autocompletion:**
+
+Enable tab-completion for `git meta` and `git-meta` by adding one of the following to your shell profile:
+
+```bash
+# Zsh (~/.zshrc)
+source <(git meta completion zsh)
+
+# Bash (~/.bashrc)
+source <(git meta completion bash)
+```
+
 ### 2. Run Backend Daemon (`metastackrd`)
 
 Set your database and GitHub credentials:

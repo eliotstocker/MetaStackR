@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"metastackr/internal/gitutils"
+
 	"metastackr/internal/db"
 )
 
@@ -36,6 +38,7 @@ type GitHubClient struct {
 	privateKey *rsa.PrivateKey
 	tokenCache map[int64]cachedToken
 	cacheMu    sync.RWMutex
+	repo       *db.Repository
 }
 
 func NewGitHubClient(token string) *GitHubClient {
@@ -48,6 +51,10 @@ func NewGitHubClient(token string) *GitHubClient {
 		httpClient: &http.Client{},
 		tokenCache: make(map[int64]cachedToken),
 	}
+}
+
+func (c *GitHubClient) SetRepository(repo *db.Repository) {
+	c.repo = repo
 }
 
 func NewGitHubClientWithApp(appID string, privateKeyPEM string, defaultToken string) (*GitHubClient, error) {
@@ -66,7 +73,8 @@ func NewGitHubClientWithApp(appID string, privateKeyPEM string, defaultToken str
 }
 
 func parsePrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
-	block, _ := pem.Decode(pemBytes)
+	pemStr := strings.ReplaceAll(string(pemBytes), "\\n", "\n")
+	block, _ := pem.Decode([]byte(pemStr))
 	if block == nil {
 		return nil, fmt.Errorf("failed to decode PEM block from private key")
 	}
@@ -107,6 +115,76 @@ func generateJWT(appID string, privateKey *rsa.PrivateKey) (string, error) {
 	return signingInput + "." + sigB64, nil
 }
 
+// HasAppAccessToRepo checks whether the GitHub App has been granted access to a specific repository.
+func (c *GitHubClient) HasAppAccessToRepo(ctx context.Context, repoFullName string) (bool, int64) {
+	if c == nil || c.privateKey == nil || c.appID == "" {
+		return false, 0
+	}
+
+	jwtStr, err := generateJWT(c.appID, c.privateKey)
+	if err != nil {
+		return false, 0
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/installation", c.baseURL, repoFullName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, 0
+	}
+
+	req.Header.Set("Authorization", "Bearer "+jwtStr)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, 0
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		var result struct {
+			ID int64 `json:"id"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&result) == nil && result.ID > 0 {
+			return true, result.ID
+		}
+	}
+
+	return false, 0
+}
+
+// HasAppInstalledOnAccount checks whether the GitHub App is installed on the user or org account.
+func (c *GitHubClient) HasAppInstalledOnAccount(ctx context.Context, owner string) bool {
+	if c == nil || c.privateKey == nil || c.appID == "" || owner == "" {
+		return false
+	}
+
+	jwtStr, err := generateJWT(c.appID, c.privateKey)
+	if err != nil {
+		return false
+	}
+
+	for _, endpoint := range []string{"users", "orgs"} {
+		url := fmt.Sprintf("%s/%s/%s/installation", c.baseURL, endpoint, owner)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+jwtStr)
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+		resp, err := c.httpClient.Do(req)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // GetInstallationToken exchanges a GitHub App JWT for a short-lived installation access token.
 func (c *GitHubClient) GetInstallationToken(ctx context.Context, installationID int64) (string, error) {
 	if installationID == 0 || c.privateKey == nil {
@@ -121,6 +199,19 @@ func (c *GitHubClient) GetInstallationToken(ctx context.Context, installationID 
 		}
 	}
 	c.cacheMu.RUnlock()
+
+	// Check DB cache for cross-container persistence
+	if c.repo != nil {
+		if dbToken, err := c.repo.GetCachedInstallationToken(ctx, installationID); err == nil && dbToken != "" {
+			c.cacheMu.Lock()
+			c.tokenCache[installationID] = cachedToken{
+				Token:     dbToken,
+				ExpiresAt: time.Now().Add(50 * time.Minute),
+			}
+			c.cacheMu.Unlock()
+			return dbToken, nil
+		}
+	}
 
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
@@ -137,6 +228,7 @@ func (c *GitHubClient) GetInstallationToken(ctx context.Context, installationID 
 		return "", fmt.Errorf("failed to generate GitHub App JWT: %w", err)
 	}
 
+	log.Printf("[auth] Requesting installation token for installation %d (appID: %s, hasKey: %v)", installationID, c.appID, c.privateKey != nil)
 	url := fmt.Sprintf("%s/app/installations/%d/access_tokens", c.baseURL, installationID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
@@ -147,12 +239,14 @@ func (c *GitHubClient) GetInstallationToken(ctx context.Context, installationID 
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		log.Printf("[auth] HTTP client error requesting token: %v", err)
 		return "", fmt.Errorf("failed to request installation token: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[auth] Installation token error HTTP %d: %s", resp.StatusCode, string(body))
 		return "", fmt.Errorf("installation token API returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -167,6 +261,10 @@ func (c *GitHubClient) GetInstallationToken(ctx context.Context, installationID 
 	c.tokenCache[installationID] = cachedToken{
 		Token:     tokenResp.Token,
 		ExpiresAt: tokenResp.ExpiresAt,
+	}
+
+	if c.repo != nil {
+		_ = c.repo.SaveInstallationToken(ctx, installationID, tokenResp.Token, tokenResp.ExpiresAt)
 	}
 
 	return tokenResp.Token, nil
@@ -268,8 +366,12 @@ func (c *GitHubClient) GetInstallationTokenForRepo(ctx context.Context, repoFull
 // UpdateMetaCheckRun creates or updates the single GitHub Check Run named 'meta-repo/sync'.
 func (c *GitHubClient) UpdateMetaCheckRun(ctx context.Context, metaRepo string, headSHA string, metaPR *db.MetaPR, installationID int64) error {
 	token, err := c.GetInstallationTokenForRepo(ctx, metaRepo, installationID)
-	if err != nil {
-		return fmt.Errorf("failed to acquire token for check run: %w", err)
+	if err != nil || token == "" {
+		if c.token != "" {
+			token = c.token
+		} else {
+			token = gitutils.GetGHToken()
+		}
 	}
 
 	title, summary, markdownText := GenerateMarkdownTable(metaPR)
@@ -367,6 +469,147 @@ func (c *GitHubClient) GetPRHeadSHA(ctx context.Context, repoFullName string, pr
 	return prPayload.Head.SHA, nil
 }
 
+// GetOpenPRForBranch checks if a repository has an open or merged PR matching the branch name.
+func (c *GitHubClient) GetOpenPRForBranch(ctx context.Context, repoFullName string, branchName string, installationID int64) (int, string, bool, error) {
+	if repoFullName == "" || branchName == "" {
+		return 0, "", false, nil
+	}
+
+	token, err := c.GetInstallationTokenForRepo(ctx, repoFullName, installationID)
+	if err != nil || token == "" {
+		if c.token != "" {
+			token = c.token
+		} else {
+			token = gitutils.GetGHToken()
+		}
+	}
+
+	parts := strings.Split(repoFullName, "/")
+	owner := parts[0]
+	url := fmt.Sprintf("%s/repos/%s/pulls?head=%s:%s&state=all", c.baseURL, repoFullName, owner, branchName)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return 0, "", false, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, "", false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusForbidden && token != gitutils.GetGHToken() && gitutils.GetGHToken() != "" {
+		// Retry with personal token fallback if installation token is rate-limited
+		fallbackReq, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+		fallbackReq.Header.Set("Authorization", "Bearer "+gitutils.GetGHToken())
+		fallbackReq.Header.Set("Accept", "application/vnd.github.v3+json")
+		if fallbackResp, fallbackErr := c.httpClient.Do(fallbackReq); fallbackErr == nil {
+			defer fallbackResp.Body.Close()
+			if fallbackResp.StatusCode >= 200 && fallbackResp.StatusCode < 300 {
+				resp = fallbackResp
+			}
+		}
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return 0, "", false, fmt.Errorf("GitHub API returned HTTP %d for pulls on %s", resp.StatusCode, repoFullName)
+	}
+
+	var prs []struct {
+		Number int  `json:"number"`
+		Merged bool `json:"merged"`
+		Head   struct {
+			SHA string `json:"sha"`
+		} `json:"head"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&prs); err != nil {
+		return 0, "", false, err
+	}
+
+	if len(prs) > 0 {
+		return prs[0].Number, prs[0].Head.SHA, prs[0].Merged, nil
+	}
+
+	return 0, "", false, nil
+}
+
+// MergePullRequest merges a pull request on GitHub via REST API PUT /repos/{owner}/{repo}/pulls/{number}/merge.
+func (c *GitHubClient) MergePullRequest(ctx context.Context, repoFullName string, prNumber int, mergeMethod string, installationID int64) (string, error) {
+	if repoFullName == "" || prNumber <= 0 {
+		return "", fmt.Errorf("invalid repository or PR number")
+	}
+
+	if mergeMethod == "" {
+		mergeMethod = "merge"
+	}
+
+	token, err := c.GetInstallationTokenForRepo(ctx, repoFullName, installationID)
+	if err != nil || token == "" {
+		if c.token != "" {
+			token = c.token
+		} else {
+			token = gitutils.GetGHToken()
+		}
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/pulls/%d/merge", c.baseURL, repoFullName, prNumber)
+	payload := map[string]string{
+		"merge_method": mergeMethod,
+	}
+	bodyBytes, _ := json.Marshal(payload)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to call GitHub merge API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusForbidden && token != gitutils.GetGHToken() && gitutils.GetGHToken() != "" {
+		// Retry with PAT token fallback if rate limited
+		retryReq, _ := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(bodyBytes))
+		retryReq.Header.Set("Authorization", "Bearer "+gitutils.GetGHToken())
+		retryReq.Header.Set("Accept", "application/vnd.github.v3+json")
+		retryReq.Header.Set("Content-Type", "application/json")
+		if retryResp, retryErr := c.httpClient.Do(retryReq); retryErr == nil {
+			defer retryResp.Body.Close()
+			if retryResp.StatusCode >= 200 && retryResp.StatusCode < 300 {
+				resp = retryResp
+			}
+		}
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("GitHub API returned HTTP %d for merge on %s#%d: %s", resp.StatusCode, repoFullName, prNumber, string(body))
+	}
+
+	var result struct {
+		SHA     string `json:"sha"`
+		Merged  bool   `json:"merged"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+
+	log.Printf("[merger] Successfully merged %s#%d (SHA: %s)", repoFullName, prNumber, result.SHA)
+	return result.SHA, nil
+}
+
 // EnsureChildPRComment posts a standard comment on a child PR referencing its parent Meta PR if not already posted.
 func (c *GitHubClient) EnsureChildPRComment(ctx context.Context, childRepo string, prNumber int, parentMetaRepo string, parentPRNumber int, branchName string, installationID int64) error {
 	if prNumber <= 0 || childRepo == "" || parentMetaRepo == "" || parentPRNumber <= 0 {
@@ -374,8 +617,12 @@ func (c *GitHubClient) EnsureChildPRComment(ctx context.Context, childRepo strin
 	}
 
 	token, err := c.GetInstallationTokenForRepo(ctx, childRepo, installationID)
-	if err != nil {
-		return fmt.Errorf("failed to acquire token for PR comment: %w", err)
+	if err != nil || token == "" {
+		if c.token != "" {
+			token = c.token
+		} else {
+			token = gitutils.GetGHToken()
+		}
 	}
 
 	marker := "<!-- metastackr-child-pr-comment -->"
@@ -431,6 +678,174 @@ func (c *GitHubClient) EnsureChildPRComment(ctx context.Context, childRepo strin
 	return nil
 }
 
+// EnsureRootPRDescriptionBody embeds/updates the matrix table directly in the main PR description body (e.g. #issue-xxx),
+// avoiding separate issue comments and cleaning up any legacy comments.
+func (c *GitHubClient) EnsureRootPRDescriptionBody(ctx context.Context, metaRepo string, prNumber int, metaPR *db.MetaPR, installationID int64) error {
+	if prNumber <= 0 || metaRepo == "" || metaPR == nil {
+		return nil
+	}
+
+	token, err := c.GetInstallationTokenForRepo(ctx, metaRepo, installationID)
+	if err != nil || token == "" {
+		if c.token != "" {
+			token = c.token
+		} else {
+			token = gitutils.GetGHToken()
+		}
+	}
+
+	startMarker := "<!-- metastackr-matrix-start -->"
+	endMarker := "<!-- metastackr-matrix-end -->"
+	_, _, tableMarkdown := GenerateMarkdownTable(metaPR)
+	matrixBlock := fmt.Sprintf("%s\n%s\n%s", startMarker, tableMarkdown, endMarker)
+
+	// 1. Fetch current PR description body
+	prURL := fmt.Sprintf("%s/repos/%s/pulls/%d", c.baseURL, metaRepo, prNumber)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, prURL, nil)
+	if err != nil {
+		return err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch PR description: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusForbidden && token != gitutils.GetGHToken() && gitutils.GetGHToken() != "" {
+		retryReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, prURL, nil)
+		retryReq.Header.Set("Authorization", "Bearer "+gitutils.GetGHToken())
+		retryReq.Header.Set("Accept", "application/vnd.github.v3+json")
+		if retryResp, retryErr := c.httpClient.Do(retryReq); retryErr == nil {
+			defer retryResp.Body.Close()
+			if retryResp.StatusCode >= 200 && retryResp.StatusCode < 300 {
+				resp = retryResp
+				token = gitutils.GetGHToken()
+			}
+		}
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("GitHub API returned HTTP %d for pull request %s#%d", resp.StatusCode, metaRepo, prNumber)
+	}
+
+	var prPayload struct {
+		Body string `json:"body"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&prPayload); err != nil {
+		return err
+	}
+
+	currentBody := prPayload.Body
+	var newBody string
+
+	if strings.Contains(currentBody, startMarker) && strings.Contains(currentBody, endMarker) {
+		startIndex := strings.Index(currentBody, startMarker)
+		endIndex := strings.Index(currentBody, endMarker) + len(endMarker)
+		newBody = currentBody[:startIndex] + matrixBlock + currentBody[endIndex:]
+	} else {
+		if strings.TrimSpace(currentBody) == "" {
+			newBody = matrixBlock
+		} else {
+			newBody = fmt.Sprintf("%s\n\n---\n%s", currentBody, matrixBlock)
+		}
+	}
+
+	if newBody != currentBody {
+		patchPayload := map[string]string{"body": newBody}
+		bodyBytes, _ := json.Marshal(patchPayload)
+
+		patchReq, err := http.NewRequestWithContext(ctx, http.MethodPatch, prURL, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return err
+		}
+		patchReq.Header.Set("Authorization", "Bearer "+token)
+		patchReq.Header.Set("Accept", "application/vnd.github.v3+json")
+		patchReq.Header.Set("Content-Type", "application/json")
+
+		patchResp, err := c.httpClient.Do(patchReq)
+		if err == nil {
+			defer patchResp.Body.Close()
+			if patchResp.StatusCode == http.StatusForbidden && token != gitutils.GetGHToken() && gitutils.GetGHToken() != "" {
+				retryPatch, _ := http.NewRequestWithContext(ctx, http.MethodPatch, prURL, bytes.NewReader(bodyBytes))
+				retryPatch.Header.Set("Authorization", "Bearer "+gitutils.GetGHToken())
+				retryPatch.Header.Set("Accept", "application/vnd.github.v3+json")
+				retryPatch.Header.Set("Content-Type", "application/json")
+				if rResp, rErr := c.httpClient.Do(retryPatch); rErr == nil {
+					rResp.Body.Close()
+				}
+			}
+			log.Printf("[description] Merged matrix into PR description body for %s#%d", metaRepo, prNumber)
+		}
+	}
+
+	// 2. Also clean up any separate root issue comments so there are no extra comments
+	_ = c.CleanupRootPRComments(ctx, metaRepo, prNumber, installationID)
+
+	return nil
+}
+
+// CleanupRootPRComments deletes any separate issue comments containing the root comment marker.
+func (c *GitHubClient) CleanupRootPRComments(ctx context.Context, metaRepo string, prNumber int, installationID int64) error {
+	token, err := c.GetInstallationTokenForRepo(ctx, metaRepo, installationID)
+	if err != nil || token == "" {
+		if c.token != "" {
+			token = c.token
+		} else {
+			token = gitutils.GetGHToken()
+		}
+	}
+
+	listURL := fmt.Sprintf("%s/repos/%s/issues/%d/comments", c.baseURL, metaRepo, prNumber)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusForbidden && token != gitutils.GetGHToken() && gitutils.GetGHToken() != "" {
+		retryReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
+		retryReq.Header.Set("Authorization", "Bearer "+gitutils.GetGHToken())
+		retryReq.Header.Set("Accept", "application/vnd.github.v3+json")
+		if retryResp, retryErr := c.httpClient.Do(retryReq); retryErr == nil {
+			defer retryResp.Body.Close()
+			if retryResp.StatusCode >= 200 && retryResp.StatusCode < 300 {
+				resp = retryResp
+				token = gitutils.GetGHToken()
+			}
+		}
+	}
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var comments []struct {
+			ID   int64  `json:"id"`
+			Body string `json:"body"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&comments) == nil {
+			for _, comment := range comments {
+				if strings.Contains(comment.Body, "<!-- metastackr-root-pr-comment -->") {
+					delURL := fmt.Sprintf("%s/repos/%s/issues/comments/%d", c.baseURL, metaRepo, comment.ID)
+					delReq, _ := http.NewRequestWithContext(ctx, http.MethodDelete, delURL, nil)
+					delReq.Header.Set("Authorization", "Bearer "+token)
+					delReq.Header.Set("Accept", "application/vnd.github.v3+json")
+					if delResp, err := c.httpClient.Do(delReq); err == nil {
+						delResp.Body.Close()
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // EnsureRootPRComment posts or updates a single sticky comment on the root Meta PR with the latest matrix table.
 func (c *GitHubClient) EnsureRootPRComment(ctx context.Context, metaRepo string, prNumber int, metaPR *db.MetaPR, installationID int64) error {
 	if prNumber <= 0 || metaRepo == "" || metaPR == nil {
@@ -438,8 +853,12 @@ func (c *GitHubClient) EnsureRootPRComment(ctx context.Context, metaRepo string,
 	}
 
 	token, err := c.GetInstallationTokenForRepo(ctx, metaRepo, installationID)
-	if err != nil {
-		return fmt.Errorf("failed to acquire token for root PR comment: %w", err)
+	if err != nil || token == "" {
+		if c.token != "" {
+			token = c.token
+		} else {
+			token = gitutils.GetGHToken()
+		}
 	}
 
 	marker := "<!-- metastackr-root-pr-comment -->"
@@ -452,7 +871,7 @@ func (c *GitHubClient) EnsureRootPRComment(ctx context.Context, metaRepo string,
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -460,29 +879,65 @@ func (c *GitHubClient) EnsureRootPRComment(ctx context.Context, metaRepo string,
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusForbidden && token != gitutils.GetGHToken() && gitutils.GetGHToken() != "" {
+		retryReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
+		retryReq.Header.Set("Authorization", "Bearer "+gitutils.GetGHToken())
+		retryReq.Header.Set("Accept", "application/vnd.github.v3+json")
+		if retryResp, retryErr := c.httpClient.Do(retryReq); retryErr == nil {
+			defer retryResp.Body.Close()
+			if retryResp.StatusCode >= 200 && retryResp.StatusCode < 300 {
+				resp = retryResp
+				token = gitutils.GetGHToken()
+			}
+		}
+	}
+
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var comments []struct {
 			ID   int64  `json:"id"`
 			Body string `json:"body"`
 		}
 		if json.NewDecoder(resp.Body).Decode(&comments) == nil {
+			var firstCommentID int64 = 0
 			for _, comment := range comments {
 				if strings.Contains(comment.Body, marker) {
-					if comment.Body == commentBody {
-						return nil
+					if firstCommentID == 0 {
+						firstCommentID = comment.ID
+						if comment.Body != commentBody {
+							patchURL := fmt.Sprintf("%s/repos/%s/issues/comments/%d", c.baseURL, metaRepo, comment.ID)
+							patchBytes, _ := json.Marshal(map[string]string{"body": commentBody})
+							patchReq, _ := http.NewRequestWithContext(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBytes))
+							patchReq.Header.Set("Authorization", "Bearer "+token)
+							patchReq.Header.Set("Accept", "application/vnd.github.v3+json")
+							patchReq.Header.Set("Content-Type", "application/json")
+							if patchResp, err := c.httpClient.Do(patchReq); err == nil {
+								defer patchResp.Body.Close()
+								if patchResp.StatusCode == http.StatusForbidden && token != gitutils.GetGHToken() && gitutils.GetGHToken() != "" {
+									retryPatch, _ := http.NewRequestWithContext(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBytes))
+									retryPatch.Header.Set("Authorization", "Bearer "+gitutils.GetGHToken())
+									retryPatch.Header.Set("Accept", "application/vnd.github.v3+json")
+									retryPatch.Header.Set("Content-Type", "application/json")
+									if rResp, rErr := c.httpClient.Do(retryPatch); rErr == nil {
+										rResp.Body.Close()
+									}
+								}
+								log.Printf("[comments] Updated root Meta PR comment on %s#%d", metaRepo, prNumber)
+							}
+						}
+					} else {
+						// Delete duplicate comment
+						delURL := fmt.Sprintf("%s/repos/%s/issues/comments/%d", c.baseURL, metaRepo, comment.ID)
+						delReq, _ := http.NewRequestWithContext(ctx, http.MethodDelete, delURL, nil)
+						delReq.Header.Set("Authorization", "Bearer "+token)
+						delReq.Header.Set("Accept", "application/vnd.github.v3+json")
+						if delResp, err := c.httpClient.Do(delReq); err == nil {
+							delResp.Body.Close()
+						}
 					}
-					patchURL := fmt.Sprintf("%s/repos/%s/issues/comments/%d", c.baseURL, metaRepo, comment.ID)
-					patchBytes, _ := json.Marshal(map[string]string{"body": commentBody})
-					patchReq, _ := http.NewRequestWithContext(ctx, http.MethodPatch, patchURL, bytes.NewReader(patchBytes))
-					patchReq.Header.Set("Authorization", "Bearer "+token)
-					patchReq.Header.Set("Accept", "application/vnd.github+json")
-					patchReq.Header.Set("Content-Type", "application/json")
-					if patchResp, err := c.httpClient.Do(patchReq); err == nil {
-						patchResp.Body.Close()
-						log.Printf("[comments] Updated root Meta PR comment on %s#%d", metaRepo, prNumber)
-					}
-					return nil
 				}
+			}
+			if firstCommentID > 0 {
+				return nil
 			}
 		}
 	}
@@ -500,11 +955,338 @@ func (c *GitHubClient) EnsureRootPRComment(ctx context.Context, metaRepo string,
 
 	postResp, err := c.httpClient.Do(postReq)
 	if err != nil {
-		return fmt.Errorf("failed to post root PR comment: %w", err)
+		return fmt.Errorf("failed to post comment: %w", err)
 	}
 	defer postResp.Body.Close()
+
+	if postResp.StatusCode == http.StatusForbidden && token != gitutils.GetGHToken() && gitutils.GetGHToken() != "" {
+		// Retry post with personal token if installation token is rate limited
+		retryReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, listURL, bytes.NewReader(bodyBytes))
+		retryReq.Header.Set("Authorization", "Bearer "+gitutils.GetGHToken())
+		retryReq.Header.Set("Accept", "application/vnd.github+json")
+		retryReq.Header.Set("Content-Type", "application/json")
+		if retryResp, retryErr := c.httpClient.Do(retryReq); retryErr == nil {
+			defer retryResp.Body.Close()
+			if retryResp.StatusCode >= 200 && retryResp.StatusCode < 300 {
+				log.Printf("[comments] Posted root Meta PR comment on %s#%d (via PAT fallback)", metaRepo, prNumber)
+				return nil
+			}
+		}
+	}
+
+	if postResp.StatusCode >= 400 {
+		body, _ := io.ReadAll(postResp.Body)
+		return fmt.Errorf("failed to post root comment on %s#%d: HTTP %d: %s", metaRepo, prNumber, postResp.StatusCode, string(body))
+	}
 
 	log.Printf("[comments] Posted root Meta PR comment on %s#%d", metaRepo, prNumber)
 	return nil
 }
 
+// HasApprovedReview checks if a pull request has at least one 'APPROVED' review on GitHub.
+func (c *GitHubClient) HasApprovedReview(ctx context.Context, repoFullName string, prNumber int, installationID int64) (bool, error) {
+	token, err := c.GetInstallationTokenForRepo(ctx, repoFullName, installationID)
+	if err != nil || token == "" {
+		if c.token != "" {
+			token = c.token
+		} else {
+			token = gitutils.GetGHToken()
+		}
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/pulls/%d/reviews", c.baseURL, repoFullName, prNumber)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch PR reviews: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("GitHub API returned HTTP %d for reviews on %s#%d: %s", resp.StatusCode, repoFullName, prNumber, string(body))
+	}
+
+	var reviews []struct {
+		State string `json:"state"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&reviews); err != nil {
+		return false, err
+	}
+
+	for _, rev := range reviews {
+		if strings.ToUpper(rev.State) == "APPROVED" {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// AreRequiredChecksPassing checks if all required status check contexts have passed on a commit SHA.
+func (c *GitHubClient) AreRequiredChecksPassing(ctx context.Context, repoFullName string, headSHA string, requiredChecks []string, installationID int64) (bool, []string, error) {
+	if len(requiredChecks) == 0 {
+		return true, nil, nil
+	}
+
+	token, err := c.GetInstallationTokenForRepo(ctx, repoFullName, installationID)
+	if err != nil || token == "" {
+		if c.token != "" {
+			token = c.token
+		} else {
+			token = gitutils.GetGHToken()
+		}
+	}
+
+	// 1. Fetch Check Runs
+	url := fmt.Sprintf("%s/repos/%s/commits/%s/check-runs", c.baseURL, repoFullName, headSHA)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, requiredChecks, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	passedChecks := make(map[string]bool)
+
+	if resp, err := c.httpClient.Do(req); err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			var checkRunsResp struct {
+				CheckRuns []struct {
+					Name       string  `json:"name"`
+					Status     string  `json:"status"`
+					Conclusion *string `json:"conclusion"`
+				} `json:"check_runs"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&checkRunsResp); err == nil {
+				for _, run := range checkRunsResp.CheckRuns {
+					if run.Status == "completed" && run.Conclusion != nil && *run.Conclusion == "success" {
+						passedChecks[strings.ToLower(run.Name)] = true
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Fetch Commit Statuses (legacy status API)
+	statusURL := fmt.Sprintf("%s/repos/%s/commits/%s/status", c.baseURL, repoFullName, headSHA)
+	if reqStatus, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil); err == nil {
+		if token != "" {
+			reqStatus.Header.Set("Authorization", "Bearer "+token)
+		}
+		reqStatus.Header.Set("Accept", "application/vnd.github+json")
+		if respStatus, err := c.httpClient.Do(reqStatus); err == nil {
+			defer respStatus.Body.Close()
+			if respStatus.StatusCode >= 200 && respStatus.StatusCode < 300 {
+				var statusResp struct {
+					Statuses []struct {
+						Context string `json:"context"`
+						State   string `json:"state"`
+					} `json:"statuses"`
+				}
+				if err := json.NewDecoder(respStatus.Body).Decode(&statusResp); err == nil {
+					for _, st := range statusResp.Statuses {
+						if st.State == "success" {
+							passedChecks[strings.ToLower(st.Context)] = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	var pendingOrFailed []string
+	for _, reqCheck := range requiredChecks {
+		if !passedChecks[strings.ToLower(reqCheck)] {
+			pendingOrFailed = append(pendingOrFailed, reqCheck)
+		}
+	}
+
+	if len(pendingOrFailed) > 0 {
+		return false, pendingOrFailed, nil
+	}
+
+	return true, nil, nil
+}
+
+type SubmodulePointerUpdate struct {
+	SubmodulePath string
+	MergedSHA     string
+}
+
+func (c *GitHubClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repoFullName string, branchName string, updates []SubmodulePointerUpdate, instID int64) error {
+	if len(updates) == 0 {
+		return nil
+	}
+
+	token, err := c.GetInstallationToken(ctx, instID)
+	if err != nil {
+		return fmt.Errorf("failed to get installation token: %w", err)
+	}
+
+	// 1. Get branch HEAD commit
+	refURL := fmt.Sprintf("%s/repos/%s/git/ref/heads/%s", c.baseURL, repoFullName, branchName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, refURL, nil)
+	if err != nil {
+		return err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to fetch branch ref %s: %s", branchName, string(body))
+	}
+
+	var refResp struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&refResp); err != nil {
+		return err
+	}
+	baseCommitSHA := refResp.Object.SHA
+
+	// 2. Get base commit to extract tree SHA
+	commitURL := fmt.Sprintf("%s/repos/%s/git/commits/%s", c.baseURL, repoFullName, baseCommitSHA)
+	reqCommit, _ := http.NewRequestWithContext(ctx, http.MethodGet, commitURL, nil)
+	if token != "" {
+		reqCommit.Header.Set("Authorization", "Bearer "+token)
+	}
+	reqCommit.Header.Set("Accept", "application/vnd.github+json")
+	respCommit, err := c.httpClient.Do(reqCommit)
+	if err != nil {
+		return err
+	}
+	defer respCommit.Body.Close()
+
+	var commitObj struct {
+		Tree struct {
+			SHA string `json:"sha"`
+		} `json:"tree"`
+	}
+	if err := json.NewDecoder(respCommit.Body).Decode(&commitObj); err != nil {
+		return err
+	}
+	baseTreeSHA := commitObj.Tree.SHA
+
+	// 3. Post new tree with updated submodule commit pointers
+	type treeItem struct {
+		Path string `json:"path"`
+		Mode string `json:"mode"`
+		Type string `json:"type"`
+		SHA  string `json:"sha"`
+	}
+	var treeItems []treeItem
+	for _, up := range updates {
+		treeItems = append(treeItems, treeItem{
+			Path: up.SubmodulePath,
+			Mode: "160000",
+			Type: "commit",
+			SHA:  up.MergedSHA,
+		})
+	}
+
+	treeReqBody, _ := json.Marshal(map[string]interface{}{
+		"base_tree": baseTreeSHA,
+		"tree":      treeItems,
+	})
+
+	postTreeURL := fmt.Sprintf("%s/repos/%s/git/trees", c.baseURL, repoFullName)
+	reqPostTree, _ := http.NewRequestWithContext(ctx, http.MethodPost, postTreeURL, bytes.NewReader(treeReqBody))
+	if token != "" {
+		reqPostTree.Header.Set("Authorization", "Bearer "+token)
+	}
+	reqPostTree.Header.Set("Accept", "application/vnd.github+json")
+	reqPostTree.Header.Set("Content-Type", "application/json")
+
+	respPostTree, err := c.httpClient.Do(reqPostTree)
+	if err != nil {
+		return err
+	}
+	defer respPostTree.Body.Close()
+
+	var postTreeResp struct {
+		SHA string `json:"sha"`
+	}
+	if err := json.NewDecoder(respPostTree.Body).Decode(&postTreeResp); err != nil {
+		return err
+	}
+	newTreeSHA := postTreeResp.SHA
+
+	// 4. Create new git commit with updated tree
+	newCommitBody, _ := json.Marshal(map[string]interface{}{
+		"message": "chore: sync submodule commit pointers [metastackr]",
+		"tree":    newTreeSHA,
+		"parents": []string{baseCommitSHA},
+	})
+
+	postCommitURL := fmt.Sprintf("%s/repos/%s/git/commits", c.baseURL, repoFullName)
+	reqPostCommit, _ := http.NewRequestWithContext(ctx, http.MethodPost, postCommitURL, bytes.NewReader(newCommitBody))
+	if token != "" {
+		reqPostCommit.Header.Set("Authorization", "Bearer "+token)
+	}
+	reqPostCommit.Header.Set("Accept", "application/vnd.github+json")
+	reqPostCommit.Header.Set("Content-Type", "application/json")
+
+	respPostCommit, err := c.httpClient.Do(reqPostCommit)
+	if err != nil {
+		return err
+	}
+	defer respPostCommit.Body.Close()
+
+	var postCommitResp struct {
+		SHA string `json:"sha"`
+	}
+	if err := json.NewDecoder(respPostCommit.Body).Decode(&postCommitResp); err != nil {
+		return err
+	}
+	newCommitSHA := postCommitResp.SHA
+
+	// 5. Update branch ref to point to new commit
+	updateRefBody, _ := json.Marshal(map[string]interface{}{
+		"sha":   newCommitSHA,
+		"force": false,
+	})
+
+	patchRefURL := fmt.Sprintf("%s/repos/%s/git/refs/heads/%s", c.baseURL, repoFullName, branchName)
+	reqPatchRef, _ := http.NewRequestWithContext(ctx, http.MethodPatch, patchRefURL, bytes.NewReader(updateRefBody))
+	if token != "" {
+		reqPatchRef.Header.Set("Authorization", "Bearer "+token)
+	}
+	reqPatchRef.Header.Set("Accept", "application/vnd.github+json")
+	reqPatchRef.Header.Set("Content-Type", "application/json")
+
+	respPatchRef, err := c.httpClient.Do(reqPatchRef)
+	if err != nil {
+		return err
+	}
+	defer respPatchRef.Body.Close()
+
+	if respPatchRef.StatusCode < 200 || respPatchRef.StatusCode >= 300 {
+		body, _ := io.ReadAll(respPatchRef.Body)
+		return fmt.Errorf("failed to update branch ref %s: %s", branchName, string(body))
+	}
+
+	return nil
+}

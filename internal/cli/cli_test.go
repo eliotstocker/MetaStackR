@@ -51,3 +51,25 @@ func TestWriteAgentsMD(t *testing.T) {
 		t.Errorf("AGENTS.md missing expected content")
 	}
 }
+
+func TestIsInitialized(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "metastackr-init-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	if IsInitialized(tempDir) {
+		t.Errorf("Uninitialized directory should return false for IsInitialized")
+	}
+
+	// Write AGENTS.md with MetaStackR content
+	agentsFile := filepath.Join(tempDir, "AGENTS.md")
+	if err := os.WriteFile(agentsFile, []byte("# Guidelines for MetaStackR"), 0644); err != nil {
+		t.Fatalf("Failed to write AGENTS.md: %v", err)
+	}
+
+	if !IsInitialized(tempDir) {
+		t.Errorf("Directory with MetaStackR AGENTS.md should return true for IsInitialized")
+	}
+}

@@ -95,6 +95,28 @@ func NewRootCmd() *cobra.Command {
 		}
 	})
 
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		cmdName := cmd.Name()
+		if cmdName == "init" || cmdName == "version" || cmdName == "help" || cmdName == "agents" || cmdName == "completion" || cmdName == "git-meta" {
+			return
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			return
+		}
+
+		if !IsInitialized(cwd) {
+			warnMsg := fmt.Sprintf("⚠️ WARNING: Repository has not been initialized with '%s init'. Run '%s init' to register webhooks and enable backend PR tracking.", useCmd, useCmd)
+			if jsonOutput {
+				fmt.Fprintln(os.Stderr, warnMsg)
+			} else {
+				fmt.Println(warningStyle.Render(warnMsg))
+				fmt.Println()
+			}
+		}
+	}
+
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newCheckoutCmd())
 	rootCmd.AddCommand(newCommitCmd())
@@ -108,8 +130,85 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newSetupWebhookCmd())
 	rootCmd.AddCommand(newInitCmd())
 	rootCmd.AddCommand(newVersionCmd())
+	rootCmd.AddCommand(newCompletionCmd(rootCmd))
 
 	return rootCmd
+}
+
+func newCompletionCmd(rootCmd *cobra.Command) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "completion [bash|zsh|fish|powershell]",
+		Short: "Generate the autocompletion script for git-meta and git meta",
+		Long: `To load completions:
+
+  # Zsh:
+  # Add to your ~/.zshrc:
+  source <(git meta completion zsh)
+
+  # Bash:
+  # Add to your ~/.bashrc:
+  source <(git meta completion bash)
+
+  # Fish:
+  # Add to your ~/.config/fish/config.fish:
+  git meta completion fish | source
+`,
+		ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
+		Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch args[0] {
+			case "bash":
+				var buf bytes.Buffer
+				if err := rootCmd.GenBashCompletionV2(&buf, true); err != nil {
+					return err
+				}
+				buf.WriteString("\n# Git subcommand completion for 'git meta'\n_git_meta() {\n    _git-meta \"$@\"\n}\ncomplete -F _git_meta git-meta\n")
+				fmt.Print(buf.String())
+			case "zsh":
+				var buf bytes.Buffer
+				if err := rootCmd.GenZshCompletion(&buf); err != nil {
+					return err
+				}
+				buf.WriteString("\n# Git subcommand completion for 'git meta'\n_git_meta() {\n    _git-meta \"$@\"\n}\ncompdef _git_meta git-meta\ncompdef _git_meta 'git meta'\n")
+				fmt.Print(buf.String())
+			case "fish":
+				return rootCmd.GenFishCompletion(os.Stdout, true)
+			case "powershell":
+				return rootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
+			}
+			return nil
+		},
+	}
+	return cmd
+}
+
+func GetRepoRoot(dir string) string {
+	root, err := gitutils.ExecGit(dir, "rev-parse", "--show-toplevel")
+	if err == nil && strings.TrimSpace(root) != "" {
+		return strings.TrimSpace(root)
+	}
+	return dir
+}
+
+func IsInitialized(rootDir string) bool {
+	root := GetRepoRoot(rootDir)
+
+	val, err := gitutils.ExecGit(root, "config", "--get", "metastackr.initialized")
+	if err == nil && strings.TrimSpace(val) == "true" {
+		return true
+	}
+
+	postCheckoutPath := filepath.Join(root, ".git", "hooks", "post-checkout")
+	if data, err := os.ReadFile(postCheckoutPath); err == nil && strings.Contains(string(data), "git-meta") {
+		return true
+	}
+
+	agentsPath := filepath.Join(root, "AGENTS.md")
+	if data, err := os.ReadFile(agentsPath); err == nil && (strings.Contains(string(data), "MetaStackR") || strings.Contains(string(data), "git-meta")) {
+		return true
+	}
+
+	return false
 }
 
 func newStatusCmd() *cobra.Command {
@@ -425,6 +524,11 @@ func newCreatePRCmd() *cobra.Command {
 				return err
 			}
 
+			opts.MergeMethod = strings.ToLower(strings.TrimSpace(opts.MergeMethod))
+			if opts.MergeMethod != "" && opts.MergeMethod != "merge" && opts.MergeMethod != "squash" && opts.MergeMethod != "rebase" {
+				return fmt.Errorf("invalid merge method '%s'. Allowed values: merge, squash, rebase", opts.MergeMethod)
+			}
+
 			results, err := gitutils.CreatePRs(cwd, opts)
 			if err != nil {
 				if jsonOutput {
@@ -461,6 +565,7 @@ func newCreatePRCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&opts.Title, "title", "t", "", "Pull request title (defaults to latest commit message)")
 	cmd.Flags().StringVarP(&opts.Body, "body", "b", "", "Pull request description body")
 	cmd.Flags().StringVar(&opts.BaseBranch, "base", "main", "Target base branch for pull requests")
+	cmd.Flags().StringVar(&opts.MergeMethod, "merge-method", "merge", "Merge method to use when auto-merging on GitHub (merge, squash, rebase)")
 	cmd.Flags().BoolVarP(&opts.Draft, "draft", "d", false, "Create draft pull requests")
 	cmd.Flags().BoolVarP(&opts.ForceWeb, "web", "w", false, "Open PR compare pages in default web browser")
 
@@ -716,6 +821,8 @@ func newSetupWebhookCmd() *cobra.Command {
 				return err
 			}
 
+			_, _ = gitutils.ExecGit(cwd, "config", "metastackr.initialized", "true")
+
 			if jsonOutput {
 				printJSON(true, "Webhook registered successfully", map[string]string{
 					"target_url":     targetURL,
@@ -741,6 +848,7 @@ func newInitCmd() *cobra.Command {
 	var webhookURL string
 	var secret string
 	var allowCodePull bool
+	var skipWebhooks bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -773,6 +881,9 @@ func newInitCmd() *cobra.Command {
 				return err
 			}
 
+			var appInstalledOnRepo bool
+			var appInstalledOnAccount bool
+
 			trackURL := fmt.Sprintf("%s/api/v1/repos/track", serverURL)
 			req, err := http.NewRequest(http.MethodPost, trackURL, bytes.NewReader(trackBytes))
 			if err != nil {
@@ -800,6 +911,12 @@ func newInitCmd() *cobra.Command {
 						if id, ok := trackResp["repo_id"].(string); ok {
 							serverRepoID = id
 						}
+						if appInstalled, ok := trackResp["github_app_installed"].(bool); ok && appInstalled {
+							appInstalledOnRepo = true
+						}
+						if accountInstalled, ok := trackResp["app_installed_on_account"].(bool); ok && accountInstalled {
+							appInstalledOnAccount = true
+						}
 					}
 				}
 			}
@@ -810,6 +927,28 @@ func newInitCmd() *cobra.Command {
 					printJSON(false, errStr, nil)
 				}
 				return fmt.Errorf("%s", errStr)
+			}
+
+			// Register submodules on remote backend server
+			localStatus, _ := gitutils.GetLocalStatus(cwd)
+			if localStatus != nil {
+				for _, sub := range localStatus.Submodules {
+					subRepoName, err := gitutils.GetMetaRepoName(filepath.Join(cwd, sub.Path))
+					if err == nil && subRepoName != "" && subRepoName != repoName {
+						subTrackPayload := map[string]interface{}{
+							"full_name":       subRepoName,
+							"allow_code_pull": allowCodePull,
+						}
+						if subTrackBytes, err := json.Marshal(subTrackPayload); err == nil {
+							if req, err := http.NewRequest(http.MethodPost, trackURL, bytes.NewReader(subTrackBytes)); err == nil {
+								req.Header.Set("Content-Type", "application/json")
+								if subResp, err := client.Do(req); err == nil {
+									subResp.Body.Close()
+								}
+							}
+						}
+					}
+				}
 			}
 
 			if !jsonOutput {
@@ -844,18 +983,52 @@ func newInitCmd() *cobra.Command {
 			}
 
 			// 3. Register GitHub Webhooks
-			if !jsonOutput {
-				fmt.Println("\n3. Registering GitHub Webhooks (Parent + Submodules)...")
-			}
-			err = gitutils.RegisterGitHubWebhook(cwd, webhookURL, secret, "")
-			if err != nil {
-				if jsonOutput {
-					printJSON(false, fmt.Sprintf("Failed to register webhooks: %v", err), nil)
+			if appInstalledOnRepo {
+				if !jsonOutput {
+					fmt.Println("\n3. ✅ MetaStackr GitHub App is installed and has permission for this repository. Skipping manual webhook setup!")
 				}
-				return err
-			}
-			if !jsonOutput {
-				fmt.Println("  ✅ GitHub webhooks registered successfully.")
+			} else if skipWebhooks {
+				if !jsonOutput {
+					fmt.Println("\n3. Skipping per-repository GitHub Webhooks setup (--skip-webhooks flag set).")
+				}
+			} else {
+				if !jsonOutput {
+					fmt.Println("\n3. GitHub Webhook Setup:")
+					if appInstalledOnAccount {
+						fmt.Printf("   ⚠️ MetaStackr GitHub App is installed on your account, but does NOT have permission for repository '%s'.\n", repoName)
+						fmt.Printf("   👉 Grant permission to this repository: https://github.com/apps/metastackr\n\n")
+					} else {
+						fmt.Println("   ℹ️ MetaStackr GitHub App is not active for this repository.")
+						fmt.Printf("   👉 Install GitHub App (Recommended): https://github.com/apps/metastackr\n\n")
+					}
+
+					setupManual := false
+					if !jsonOutput {
+						fmt.Println("   Would you like to:")
+						fmt.Println("     [1] Install / grant repository access to the MetaStackr GitHub App (Recommended)")
+						fmt.Println("     [2] Set up repository webhooks manually now")
+						fmt.Print("   Enter choice [1/2] (default 1): ")
+
+						var input string
+						_, _ = fmt.Scanln(&input)
+						input = strings.TrimSpace(input)
+						if input == "2" {
+							setupManual = true
+						}
+					}
+
+					if setupManual {
+						fmt.Println("\n   Registering repository webhooks manually...")
+						err = gitutils.RegisterGitHubWebhook(cwd, webhookURL, secret, "")
+						if err != nil {
+							fmt.Printf("   ℹ️ Webhook registration note: %v\n", err)
+						} else {
+							fmt.Println("   ✅ GitHub webhooks registered successfully.")
+						}
+					} else {
+						fmt.Println("\n   ⏩ Skipped manual webhook setup. Once the GitHub App has access, PRs will sync automatically!")
+					}
+				}
 			}
 
 			// 4. Create/update AGENTS.md guidelines
@@ -872,6 +1045,8 @@ func newInitCmd() *cobra.Command {
 			if !jsonOutput {
 				fmt.Println("  ✅ AGENTS.md guidelines written successfully.")
 			}
+
+			_, _ = gitutils.ExecGit(cwd, "config", "metastackr.initialized", "true")
 
 			if !jsonOutput {
 				fmt.Printf("\n🎉 Onboarding Complete! MetaStackr is fully set up for this repository.\n")
@@ -897,6 +1072,7 @@ func newInitCmd() *cobra.Command {
 	cmd.Flags().StringVar(&webhookURL, "url", "https://api.metastac.kr/webhooks/github", "The webhook target URL")
 	cmd.Flags().StringVar(&secret, "secret", "", "Optional webhook signature verification secret key (defaults to server repo UUID)")
 	cmd.Flags().BoolVar(&allowCodePull, "allow-code-pull", false, "Opt-in to allow backend server to pull/clone repo code")
+	cmd.Flags().BoolVar(&skipWebhooks, "skip-webhooks", false, "Skip repository-level webhook creation (use when GitHub App is installed)")
 
 	return cmd
 }

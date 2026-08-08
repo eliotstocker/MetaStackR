@@ -61,6 +61,9 @@ func main() {
 		log.Printf("[warning] Failed to initialize GitHub App client: %v", err)
 		ghClient = server.NewGitHubClient(ghToken)
 	}
+	if ghClient != nil && repo != nil {
+		ghClient.SetRepository(repo)
+	}
 	engine := worker.NewEngine(repo, ghClient, nil)
 
 	// If SQS is configured, start the SQS consumer loop
