@@ -301,6 +301,8 @@
       : (repoFullName || (window.location.pathname.match(/^\/([^\/]+\/[^\/]+)/) || [])[1]);
 
     let container = document.getElementById('metastackr-submodules-panel');
+    const isAlreadyRendered = !!container && container.dataset.rendered === 'true';
+
     if (!container) {
       container = document.createElement('div');
       container.id = 'metastackr-submodules-panel';
@@ -350,6 +352,35 @@
       `;
     });
 
+    if (isAlreadyRendered) {
+      // Surgical update of matrix grid without destroying settings panel state
+      const gridContainer = container.querySelector('.metastackr-grid');
+      if (gridContainer) {
+        gridContainer.innerHTML = `
+          <div class="metastackr-grid-header">
+            <div class="col-path">Submodule Path</div>
+            <div class="col-repo">Submodule Repo</div>
+            <div class="col-pr">PR #</div>
+            <div class="col-sha">Commit SHA</div>
+            <div class="col-status">Merge Status</div>
+          </div>
+          ${rowsHtml || '<div class="metastackr-empty">No child submodules tracked for this branch</div>'}
+        `;
+      }
+      const statusBadge = container.querySelector('.metastackr-title-group .status-badge');
+      if (statusBadge) {
+        statusBadge.className = `status-badge state-${(metaPR.status || 'open').toLowerCase()}`;
+        statusBadge.innerText = metaPR.status || 'OPEN';
+      }
+      const lockBadge = container.querySelector('.metastackr-badge-muted');
+      if (lockBadge) {
+        lockBadge.innerText = `Lock Version ${metaPR.lock_version || 1}`;
+      }
+      container.style.display = 'block';
+      return;
+    }
+
+    container.dataset.rendered = 'true';
     container.innerHTML = `
       <div class="metastackr-box">
         <div class="metastackr-box-header">
