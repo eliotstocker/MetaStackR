@@ -1,3 +1,10 @@
+## [1.5.3](https://github.com/eliotstocker/MetaStackR/compare/v1.5.2...v1.5.3) (2026-08-08)
+
+
+### Bug Fixes
+
+* **server:** parse .gitmodules to map repo full names to relative submodule tree paths ([b9727eb](https://github.com/eliotstocker/MetaStackR/commit/b9727ebe8175230ae96b0a3066a7ae399c45e3c5))
+
 ## [1.5.2](https://github.com/eliotstocker/MetaStackR/compare/v1.5.1...v1.5.2) (2026-08-08)
 
 
