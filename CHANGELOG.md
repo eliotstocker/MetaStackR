@@ -1,3 +1,10 @@
+## [1.5.2](https://github.com/eliotstocker/MetaStackR/compare/v1.5.1...v1.5.2) (2026-08-08)
+
+
+### Bug Fixes
+
+* **worker:** dynamically query submodule main HEADs and treat pointer alignment errors as hard failures ([f518147](https://github.com/eliotstocker/MetaStackR/commit/f51814758d9d68909d4f4933363105d4caf8869d))
+
 ## [1.5.1](https://github.com/eliotstocker/MetaStackR/compare/v1.5.0...v1.5.1) (2026-08-08)
 
 
