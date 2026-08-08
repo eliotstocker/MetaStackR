@@ -229,6 +229,15 @@
       </svg>MetaStackr<span aria-hidden="true" data-variant="secondary" data-component="CounterLabel" class="ml-2 prc-CounterLabel-CounterLabel-X-kRU Counter">${childPRs.length}</span>
     `;
 
+    let activeTabPollInterval = null;
+
+    function stopTabPolling() {
+      if (activeTabPollInterval) {
+        clearInterval(activeTabPollInterval);
+        activeTabPollInterval = null;
+      }
+    }
+
     subTab.addEventListener('click', (e) => {
       e.preventDefault();
       tabList.querySelectorAll('a').forEach(t => {
@@ -240,11 +249,45 @@
       subTab.classList.add('PullRequestHeaderTabNav-module__selected__g5kH0');
       subTab.setAttribute('aria-current', 'page');
 
-      showSubmodulesGrid(metaPR, childPRs, repoFullName);
+      showSubmodulesGrid(metaPR, metaPR ? metaPR.child_prs : [], repoFullName);
+
+      // Re-fetch latest PR status on tab click
+      const prMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
+      if (prMatch) {
+        const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name');
+        const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
+        fetchPRStatus(repoFullName, prNumber, branchName, (latestPR) => {
+          if (latestPR) {
+            metaPR = latestPR;
+            showSubmodulesGrid(latestPR, latestPR.child_prs, repoFullName);
+          }
+        });
+      }
+
+      // Auto-poll status every 3s while MetaStackr tab is active
+      stopTabPolling();
+      activeTabPollInterval = setInterval(() => {
+        if (!document.getElementById('metastackr-submodules-tab') || !subTab.classList.contains('selected')) {
+          stopTabPolling();
+          return;
+        }
+        const prMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
+        if (prMatch) {
+          const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name');
+          const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
+          fetchPRStatus(repoFullName, prNumber, branchName, (latestPR) => {
+            if (latestPR) {
+              metaPR = latestPR;
+              showSubmodulesGrid(latestPR, latestPR.child_prs, repoFullName);
+            }
+          });
+        }
+      }, 3000);
     });
 
     tabList.querySelectorAll('a:not(#metastackr-submodules-tab)').forEach(nativeTab => {
       nativeTab.addEventListener('click', () => {
+        stopTabPolling();
         cleanupMetaStackrPanel();
       });
     });
