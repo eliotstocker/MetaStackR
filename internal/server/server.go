@@ -146,7 +146,12 @@ func resolveInstallationID(evtID int64, dbInstID string) int64 {
 }
 
 func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEvent) error {
-	if s.repo == nil {
+	if s.repo == nil || evt == nil {
+		return nil
+	}
+
+	// Prevent rate-limit infinite loop: ignore check_run / check_suite status webhooks triggered by MetaStackr's own check runs
+	if evt.EventType == EventTypeCheckStatus {
 		return nil
 	}
 
