@@ -298,13 +298,12 @@ func GenerateMarkdownTable(metaPR *db.MetaPR) (title string, summary string, tex
 	summary = fmt.Sprintf("Meta PR #%d (%s) - Submodule PR Matrix", metaPR.PRNumber, metaPR.BranchName)
 
 	var sb strings.Builder
-	sb.WriteString("### 🔄 Submodule Synchronization Matrix\n\n")
-	sb.WriteString("| Submodule Path | Child Repo | PR # | Head SHA | Status |\n")
-	sb.WriteString("| :--- | :--- | :--- | :--- | :--- |\n")
-
 	if len(metaPR.ChildPRs) == 0 {
-		sb.WriteString("| *No child PRs tracked* | - | - | - | - |\n")
+		sb.WriteString("### 🔄 Submodule Synchronization\n\nNo submodules affected\n")
 	} else {
+		sb.WriteString("### 🔄 Submodule Synchronization Matrix\n\n")
+		sb.WriteString("| Submodule Path | Child Repo | PR # | Head SHA | Status |\n")
+		sb.WriteString("| :--- | :--- | :--- | :--- | :--- |\n")
 		for _, child := range metaPR.ChildPRs {
 			prLink := fmt.Sprintf("#%d", child.PRNumber)
 			if child.PRNumber > 0 {
