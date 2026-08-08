@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/eliotstocker/MetaStackR/compare/v1.5.0...v1.5.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **extension:** add live status re-fetch on tab click and active tab auto-polling ([fbd558a](https://github.com/eliotstocker/MetaStackR/commit/fbd558a39330411e86749fd6013c13b94ccef5c6))
+
 # [1.5.0](https://github.com/eliotstocker/MetaStackR/compare/v1.4.0...v1.5.0) (2026-08-08)
 
 
