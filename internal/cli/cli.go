@@ -127,6 +127,7 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newSyncCmd())
 	rootCmd.AddCommand(newRebaseCmd())
 	rootCmd.AddCommand(newRetryMergeCmd())
+	rootCmd.AddCommand(newConfigCmd())
 	rootCmd.AddCommand(newSettingsCmd())
 	rootCmd.AddCommand(newInstallHooksCmd())
 	rootCmd.AddCommand(newAgentsCmd())
@@ -697,17 +698,24 @@ func newRetryMergeCmd() *cobra.Command {
 }
 
 func newSettingsCmd() *cobra.Command {
+	return newConfigCmd()
+}
+
+func newConfigCmd() *cobra.Command {
 	var serverURL string
 	var repoOverride string
-	var mergeMethod string
-	var requiredChecksStr string
-	var requireRootApprovalStr string
-	var autoMergeStr string
+	var listFlag bool
+	var unsetFlag bool
+
+	var mergeMethodFlag string
+	var requiredChecksFlag string
+	var requireRootApprovalFlag string
+	var autoMergeFlag string
 
 	cmd := &cobra.Command{
-		Use:     "settings",
-		Aliases: []string{"config", "policy"},
-		Short:   "View or update Auto-Merge Policy Rules for the meta-repository",
+		Use:     "config [key] [value]",
+		Aliases: []string{"settings", "policy"},
+		Short:   "Get, set, or list repository policy settings (git config style)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {
@@ -765,55 +773,138 @@ func newSettingsCmd() *cobra.Command {
 				return err
 			}
 
-			// Check if user provided any update flags
-			isUpdating := cmd.Flags().Changed("require-root-approval") ||
-				cmd.Flags().Changed("auto-merge") ||
-				cmd.Flags().Changed("merge-method") ||
-				cmd.Flags().Changed("required-checks")
+			normalizeKey := func(k string) string {
+				k = strings.ToLower(strings.TrimSpace(k))
+				switch k {
+				case "auto-merge", "automerge", "auto_merge", "auto_merge_enabled":
+					return "auto-merge"
+				case "require-root-approval", "require-approval", "root-approval", "require_root_approval":
+					return "require-root-approval"
+				case "merge-method", "method", "default-merge-method", "default_merge_method":
+					return "merge-method"
+				case "required-checks", "checks", "required_checks":
+					return "required-checks"
+				default:
+					return k
+				}
+			}
 
-			if !isUpdating {
-				// Display mode
+			// Mode 1: Unset key (git config --unset key)
+			if unsetFlag {
+				if len(args) == 0 {
+					return fmt.Errorf("you must specify a key to unset (e.g. 'git meta config --unset required-checks')")
+				}
+				key := normalizeKey(args[0])
+				reqApproval := currentSettings.RequireRootApproval
+				autoMerge := currentSettings.AutoMergeEnabled
+				method := currentSettings.DefaultMergeMethod
+				reqChecks := currentSettings.RequiredChecks
+
+				switch key {
+				case "require-root-approval":
+					reqApproval = false
+				case "auto-merge":
+					autoMerge = true
+				case "merge-method":
+					method = "merge"
+				case "required-checks":
+					reqChecks = []string{}
+				default:
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, merge-method, required-checks", key)
+				}
+
+				return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks)
+			}
+
+			// Mode 2: No args or --list -> List all config key-values (git config --list)
+			if (len(args) == 0 && !cmd.Flags().Changed("require-root-approval") && !cmd.Flags().Changed("auto-merge") && !cmd.Flags().Changed("merge-method") && !cmd.Flags().Changed("required-checks")) || listFlag {
 				if jsonOutput {
 					printJSON(true, "Current repository policy settings", currentSettings)
 					return nil
 				}
 
-				fmt.Printf("⚙️ MetaStackr Policy Rules for %s:\n\n", currentSettings.RepoFullName)
-				fmt.Printf("  • Enable Auto Cascade Merge:  %t\n", currentSettings.AutoMergeEnabled)
-				fmt.Printf("  • Require Root PR Approval:   %t\n", currentSettings.RequireRootApproval)
-				fmt.Printf("  • Default Merge Method:        %s\n", currentSettings.DefaultMergeMethod)
-				checksDisplay := "None"
-				if len(currentSettings.RequiredChecks) > 0 {
-					checksDisplay = strings.Join(currentSettings.RequiredChecks, ", ")
-				}
-				fmt.Printf("  • Required Status Checks:      %s\n\n", checksDisplay)
+				checksVal := strings.Join(currentSettings.RequiredChecks, ",")
+				fmt.Printf("auto-merge=%t\n", currentSettings.AutoMergeEnabled)
+				fmt.Printf("require-root-approval=%t\n", currentSettings.RequireRootApproval)
+				fmt.Printf("merge-method=%s\n", currentSettings.DefaultMergeMethod)
+				fmt.Printf("required-checks=%s\n", checksVal)
 				return nil
 			}
 
-			// Update mode
+			// Mode 3: Single key arg -> GET specific key value (git config key)
+			if len(args) == 1 && !cmd.Flags().Changed("require-root-approval") && !cmd.Flags().Changed("auto-merge") && !cmd.Flags().Changed("merge-method") && !cmd.Flags().Changed("required-checks") {
+				key := normalizeKey(args[0])
+				var val string
+				switch key {
+				case "auto-merge":
+					val = fmt.Sprintf("%t", currentSettings.AutoMergeEnabled)
+				case "require-root-approval":
+					val = fmt.Sprintf("%t", currentSettings.RequireRootApproval)
+				case "merge-method":
+					val = currentSettings.DefaultMergeMethod
+				case "required-checks":
+					val = strings.Join(currentSettings.RequiredChecks, ",")
+				default:
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, merge-method, required-checks", key)
+				}
+
+				if jsonOutput {
+					printJSON(true, "", map[string]string{"key": key, "value": val})
+				} else {
+					fmt.Println(val)
+				}
+				return nil
+			}
+
+			// Mode 4: Key + Value args or Flags -> SET config key value (git config key value)
 			reqApproval := currentSettings.RequireRootApproval
-			if cmd.Flags().Changed("require-root-approval") {
-				reqApproval = strings.ToLower(requireRootApprovalStr) == "true" || requireRootApprovalStr == "1"
-			}
-
 			autoMerge := currentSettings.AutoMergeEnabled
-			if cmd.Flags().Changed("auto-merge") {
-				autoMerge = strings.ToLower(autoMergeStr) == "true" || autoMergeStr == "1"
-			}
-
 			method := currentSettings.DefaultMergeMethod
-			if cmd.Flags().Changed("merge-method") {
-				method = strings.ToLower(strings.TrimSpace(mergeMethod))
-				if method != "merge" && method != "squash" && method != "rebase" {
-					return fmt.Errorf("invalid merge method '%s'. Allowed values: merge, squash, rebase", method)
+			reqChecks := currentSettings.RequiredChecks
+
+			if len(args) >= 2 {
+				key := normalizeKey(args[0])
+				val := args[1]
+
+				switch key {
+				case "auto-merge":
+					autoMerge = strings.ToLower(val) == "true" || val == "1"
+				case "require-root-approval":
+					reqApproval = strings.ToLower(val) == "true" || val == "1"
+				case "merge-method":
+					valLower := strings.ToLower(strings.TrimSpace(val))
+					if valLower != "merge" && valLower != "squash" && valLower != "rebase" {
+						return fmt.Errorf("invalid merge method '%s'. Allowed values: merge, squash, rebase", val)
+					}
+					method = valLower
+				case "required-checks":
+					reqChecks = nil
+					if strings.TrimSpace(val) != "" {
+						for _, c := range strings.Split(val, ",") {
+							if trimmed := strings.TrimSpace(c); trimmed != "" {
+								reqChecks = append(reqChecks, trimmed)
+							}
+						}
+					}
+				default:
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, merge-method, required-checks", key)
 				}
 			}
 
-			reqChecks := currentSettings.RequiredChecks
+			// Handle optional flag overrides
+			if cmd.Flags().Changed("require-root-approval") {
+				reqApproval = strings.ToLower(requireRootApprovalFlag) == "true" || requireRootApprovalFlag == "1"
+			}
+			if cmd.Flags().Changed("auto-merge") {
+				autoMerge = strings.ToLower(autoMergeFlag) == "true" || autoMergeFlag == "1"
+			}
+			if cmd.Flags().Changed("merge-method") {
+				method = strings.ToLower(strings.TrimSpace(mergeMethodFlag))
+			}
 			if cmd.Flags().Changed("required-checks") {
 				reqChecks = nil
-				if strings.TrimSpace(requiredChecksStr) != "" {
-					for _, c := range strings.Split(requiredChecksStr, ",") {
+				if strings.TrimSpace(requiredChecksFlag) != "" {
+					for _, c := range strings.Split(requiredChecksFlag, ",") {
 						if trimmed := strings.TrimSpace(c); trimmed != "" {
 							reqChecks = append(reqChecks, trimmed)
 						}
@@ -821,64 +912,60 @@ func newSettingsCmd() *cobra.Command {
 				}
 			}
 
-			updatePayload := map[string]interface{}{
-				"repo":                  repoName,
-				"require_root_approval": reqApproval,
-				"auto_merge_enabled":    autoMerge,
-				"required_checks":       reqChecks,
-				"default_merge_method":  method,
-			}
-
-			jsonBytes, _ := json.Marshal(updatePayload)
-			postURL := serverURL + "/api/v1/repos/settings"
-			postResp, err := http.Post(postURL, "application/json", bytes.NewReader(jsonBytes))
-			if err != nil {
-				if jsonOutput {
-					printJSON(false, err.Error(), nil)
-					return nil
-				}
-				return fmt.Errorf("failed to contact backend server: %w", err)
-			}
-			defer postResp.Body.Close()
-
-			if postResp.StatusCode != http.StatusOK {
-				bodyBytes, _ := io.ReadAll(postResp.Body)
-				errStr := fmt.Sprintf("failed to update settings (HTTP %d): %s", postResp.StatusCode, string(bodyBytes))
-				if jsonOutput {
-					printJSON(false, errStr, nil)
-					return nil
-				}
-				return fmt.Errorf("%s", errStr)
-			}
-
-			var updateResult map[string]interface{}
-			_ = json.NewDecoder(postResp.Body).Decode(&updateResult)
-
-			if jsonOutput {
-				printJSON(true, "Repository policy settings updated successfully", updateResult)
-			} else {
-				fmt.Println("✅ Policy rules updated successfully!")
-				fmt.Printf("  • Enable Auto Cascade Merge:  %t\n", autoMerge)
-				fmt.Printf("  • Require Root PR Approval:   %t\n", reqApproval)
-				fmt.Printf("  • Default Merge Method:        %s\n", method)
-				checksDisplay := "None"
-				if len(reqChecks) > 0 {
-					checksDisplay = strings.Join(reqChecks, ", ")
-				}
-				fmt.Printf("  • Required Status Checks:      %s\n\n", checksDisplay)
-			}
-			return nil
+			return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks)
 		},
 	}
 
 	cmd.Flags().StringVar(&serverURL, "server", "https://api.metastac.kr", "MetaStackr backend server URL")
 	cmd.Flags().StringVar(&repoOverride, "repo", "", "Meta-repository full name (e.g. owner/repo)")
-	cmd.Flags().StringVar(&requireRootApprovalStr, "require-root-approval", "", "Require root PR approval before auto-merging (true|false)")
-	cmd.Flags().StringVar(&autoMergeStr, "auto-merge", "", "Enable auto cascade merge (true|false)")
-	cmd.Flags().StringVar(&mergeMethod, "merge-method", "", "Default merge method (merge|squash|rebase)")
-	cmd.Flags().StringVar(&requiredChecksStr, "required-checks", "", "Comma-separated list of required status check names (e.g. 'ci/build,lint')")
+	cmd.Flags().BoolVarP(&listFlag, "list", "l", false, "List all config key-values")
+	cmd.Flags().BoolVar(&unsetFlag, "unset", false, "Unset a config key")
+	cmd.Flags().StringVar(&requireRootApprovalFlag, "require-root-approval", "", "Require root PR approval before auto-merging (true|false)")
+	cmd.Flags().StringVar(&autoMergeFlag, "auto-merge", "", "Enable auto cascade merge (true|false)")
+	cmd.Flags().StringVar(&mergeMethodFlag, "merge-method", "", "Default merge method (merge|squash|rebase)")
+	cmd.Flags().StringVar(&requiredChecksFlag, "required-checks", "", "Comma-separated list of required status check names")
 
 	return cmd
+}
+
+func updateRepoSettings(serverURL, repoName string, reqApproval, autoMerge bool, method string, reqChecks []string) error {
+	updatePayload := map[string]interface{}{
+		"repo":                  repoName,
+		"require_root_approval": reqApproval,
+		"auto_merge_enabled":    autoMerge,
+		"required_checks":       reqChecks,
+		"default_merge_method":  method,
+	}
+
+	jsonBytes, _ := json.Marshal(updatePayload)
+	postURL := serverURL + "/api/v1/repos/settings"
+	postResp, err := http.Post(postURL, "application/json", bytes.NewReader(jsonBytes))
+	if err != nil {
+		if jsonOutput {
+			printJSON(false, err.Error(), nil)
+			return nil
+		}
+		return fmt.Errorf("failed to contact backend server: %w", err)
+	}
+	defer postResp.Body.Close()
+
+	if postResp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(postResp.Body)
+		errStr := fmt.Sprintf("failed to update settings (HTTP %d): %s", postResp.StatusCode, string(bodyBytes))
+		if jsonOutput {
+			printJSON(false, errStr, nil)
+			return nil
+		}
+		return fmt.Errorf("%s", errStr)
+	}
+
+	var updateResult map[string]interface{}
+	_ = json.NewDecoder(postResp.Body).Decode(&updateResult)
+
+	if jsonOutput {
+		printJSON(true, "Repository policy settings updated successfully", updateResult)
+	}
+	return nil
 }
 
 func GetAgentsMDContent() string {
