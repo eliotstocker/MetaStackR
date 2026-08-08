@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/eliotstocker/MetaStackR/compare/v1.5.4...v1.6.0) (2026-08-08)
+
+
+### Features
+
+* **policy:** add submodule_changes_only auto-merge policy rule defaulting to true ([71d457b](https://github.com/eliotstocker/MetaStackR/commit/71d457ba131f140cd5fb8c9fdfc04c0c50dc8040))
+
 ## [1.5.4](https://github.com/eliotstocker/MetaStackR/compare/v1.5.3...v1.5.4) (2026-08-08)
 
 
