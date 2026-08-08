@@ -53,6 +53,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	handleWithCORS("OPTIONS /api/v1/repos/track", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("GET /api/v1/repos/settings", s.handleGetRepoSettings)
 	handleWithCORS("PUT /api/v1/repos/settings", s.handleUpdateRepoSettings)
+	handleWithCORS("POST /api/v1/repos/settings", s.handleUpdateRepoSettings)
 	handleWithCORS("OPTIONS /api/v1/repos/settings", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

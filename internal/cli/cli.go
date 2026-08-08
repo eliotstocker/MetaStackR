@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -125,6 +127,7 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newSyncCmd())
 	rootCmd.AddCommand(newRebaseCmd())
 	rootCmd.AddCommand(newRetryMergeCmd())
+	rootCmd.AddCommand(newSettingsCmd())
 	rootCmd.AddCommand(newInstallHooksCmd())
 	rootCmd.AddCommand(newAgentsCmd())
 	rootCmd.AddCommand(newSetupWebhookCmd())
@@ -693,6 +696,191 @@ func newRetryMergeCmd() *cobra.Command {
 	return cmd
 }
 
+func newSettingsCmd() *cobra.Command {
+	var serverURL string
+	var repoOverride string
+	var mergeMethod string
+	var requiredChecksStr string
+	var requireRootApprovalStr string
+	var autoMergeStr string
+
+	cmd := &cobra.Command{
+		Use:     "settings",
+		Aliases: []string{"config", "policy"},
+		Short:   "View or update Auto-Merge Policy Rules for the meta-repository",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			repoName := repoOverride
+			if repoName == "" {
+				repoName, err = gitutils.GetMetaRepoName(cwd)
+				if err != nil || repoName == "" {
+					return fmt.Errorf("could not determine meta-repo origin: %w", err)
+				}
+			}
+
+			// 1. Fetch current settings first
+			getURL := fmt.Sprintf("%s/api/v1/repos/settings?repo=%s", serverURL, url.QueryEscape(repoName))
+			resp, err := http.Get(getURL)
+			if err != nil {
+				if jsonOutput {
+					printJSON(false, fmt.Sprintf("failed to fetch repo settings: %v", err), nil)
+					return nil
+				}
+				return fmt.Errorf("failed to contact backend server: %w", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				errStr := fmt.Sprintf("failed to fetch settings (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
+				if jsonOutput {
+					printJSON(false, errStr, nil)
+					return nil
+				}
+				return fmt.Errorf("%s", errStr)
+			}
+
+			var currentSettings struct {
+				ID                  string   `json:"id"`
+				RepoOwner           string   `json:"repo_owner"`
+				RepoName            string   `json:"repo_name"`
+				RepoFullName        string   `json:"repo_full_name"`
+				InstallationID      string   `json:"installation_id"`
+				IsEnabled           bool     `json:"is_enabled"`
+				AllowCodePull       bool     `json:"allow_code_pull"`
+				RequireRootApproval bool     `json:"require_root_approval"`
+				AutoMergeEnabled    bool     `json:"auto_merge_enabled"`
+				RequiredChecks      []string `json:"required_checks"`
+				DefaultMergeMethod  string   `json:"default_merge_method"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&currentSettings); err != nil {
+				if jsonOutput {
+					printJSON(false, fmt.Sprintf("failed to parse settings response: %v", err), nil)
+					return nil
+				}
+				return err
+			}
+
+			// Check if user provided any update flags
+			isUpdating := cmd.Flags().Changed("require-root-approval") ||
+				cmd.Flags().Changed("auto-merge") ||
+				cmd.Flags().Changed("merge-method") ||
+				cmd.Flags().Changed("required-checks")
+
+			if !isUpdating {
+				// Display mode
+				if jsonOutput {
+					printJSON(true, "Current repository policy settings", currentSettings)
+					return nil
+				}
+
+				fmt.Printf("⚙️ MetaStackr Policy Rules for %s:\n\n", currentSettings.RepoFullName)
+				fmt.Printf("  • Enable Auto Cascade Merge:  %t\n", currentSettings.AutoMergeEnabled)
+				fmt.Printf("  • Require Root PR Approval:   %t\n", currentSettings.RequireRootApproval)
+				fmt.Printf("  • Default Merge Method:        %s\n", currentSettings.DefaultMergeMethod)
+				checksDisplay := "None"
+				if len(currentSettings.RequiredChecks) > 0 {
+					checksDisplay = strings.Join(currentSettings.RequiredChecks, ", ")
+				}
+				fmt.Printf("  • Required Status Checks:      %s\n\n", checksDisplay)
+				return nil
+			}
+
+			// Update mode
+			reqApproval := currentSettings.RequireRootApproval
+			if cmd.Flags().Changed("require-root-approval") {
+				reqApproval = strings.ToLower(requireRootApprovalStr) == "true" || requireRootApprovalStr == "1"
+			}
+
+			autoMerge := currentSettings.AutoMergeEnabled
+			if cmd.Flags().Changed("auto-merge") {
+				autoMerge = strings.ToLower(autoMergeStr) == "true" || autoMergeStr == "1"
+			}
+
+			method := currentSettings.DefaultMergeMethod
+			if cmd.Flags().Changed("merge-method") {
+				method = strings.ToLower(strings.TrimSpace(mergeMethod))
+				if method != "merge" && method != "squash" && method != "rebase" {
+					return fmt.Errorf("invalid merge method '%s'. Allowed values: merge, squash, rebase", method)
+				}
+			}
+
+			reqChecks := currentSettings.RequiredChecks
+			if cmd.Flags().Changed("required-checks") {
+				reqChecks = nil
+				if strings.TrimSpace(requiredChecksStr) != "" {
+					for _, c := range strings.Split(requiredChecksStr, ",") {
+						if trimmed := strings.TrimSpace(c); trimmed != "" {
+							reqChecks = append(reqChecks, trimmed)
+						}
+					}
+				}
+			}
+
+			updatePayload := map[string]interface{}{
+				"repo":                  repoName,
+				"require_root_approval": reqApproval,
+				"auto_merge_enabled":    autoMerge,
+				"required_checks":       reqChecks,
+				"default_merge_method":  method,
+			}
+
+			jsonBytes, _ := json.Marshal(updatePayload)
+			postURL := serverURL + "/api/v1/repos/settings"
+			postResp, err := http.Post(postURL, "application/json", bytes.NewReader(jsonBytes))
+			if err != nil {
+				if jsonOutput {
+					printJSON(false, err.Error(), nil)
+					return nil
+				}
+				return fmt.Errorf("failed to contact backend server: %w", err)
+			}
+			defer postResp.Body.Close()
+
+			if postResp.StatusCode != http.StatusOK {
+				bodyBytes, _ := io.ReadAll(postResp.Body)
+				errStr := fmt.Sprintf("failed to update settings (HTTP %d): %s", postResp.StatusCode, string(bodyBytes))
+				if jsonOutput {
+					printJSON(false, errStr, nil)
+					return nil
+				}
+				return fmt.Errorf("%s", errStr)
+			}
+
+			var updateResult map[string]interface{}
+			_ = json.NewDecoder(postResp.Body).Decode(&updateResult)
+
+			if jsonOutput {
+				printJSON(true, "Repository policy settings updated successfully", updateResult)
+			} else {
+				fmt.Println("✅ Policy rules updated successfully!")
+				fmt.Printf("  • Enable Auto Cascade Merge:  %t\n", autoMerge)
+				fmt.Printf("  • Require Root PR Approval:   %t\n", reqApproval)
+				fmt.Printf("  • Default Merge Method:        %s\n", method)
+				checksDisplay := "None"
+				if len(reqChecks) > 0 {
+					checksDisplay = strings.Join(reqChecks, ", ")
+				}
+				fmt.Printf("  • Required Status Checks:      %s\n\n", checksDisplay)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&serverURL, "server", "https://api.metastac.kr", "MetaStackr backend server URL")
+	cmd.Flags().StringVar(&repoOverride, "repo", "", "Meta-repository full name (e.g. owner/repo)")
+	cmd.Flags().StringVar(&requireRootApprovalStr, "require-root-approval", "", "Require root PR approval before auto-merging (true|false)")
+	cmd.Flags().StringVar(&autoMergeStr, "auto-merge", "", "Enable auto cascade merge (true|false)")
+	cmd.Flags().StringVar(&mergeMethod, "merge-method", "", "Default merge method (merge|squash|rebase)")
+	cmd.Flags().StringVar(&requiredChecksStr, "required-checks", "", "Comma-separated list of required status check names (e.g. 'ci/build,lint')")
+
+	return cmd
+}
+
 func GetAgentsMDContent() string {
 	return `# Repository Agent Guidelines
 
@@ -742,6 +930,10 @@ MetaStackr orchestrates development across multi-repository meta-repos with Git 
 - **Retry Cascade Merges**:
   ` + "`" + `git meta retry-merge --pr <pr-number> --json` + "`" + `
   Re-triggers cascade merges on partially failed PRs.
+
+- **Configure Auto-Merge Policy Rules**:
+  ` + "`" + `git meta settings [--require-root-approval=true|false] [--auto-merge=true|false] [--merge-method=merge|squash|rebase] [--required-checks="ci/build,lint"] --json` + "`" + `
+  Inspects or updates repository policy rules and auto-merge settings.
 `
 }
 
