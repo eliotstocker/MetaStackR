@@ -1,3 +1,10 @@
+## [1.6.1](https://github.com/eliotstocker/MetaStackR/compare/v1.6.0...v1.6.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* **extension:** surgical DOM updates to prevent policy rules panel from disappearing during polling ([4b07543](https://github.com/eliotstocker/MetaStackR/commit/4b075437b421feaf23dc9fac939ec2fcb100d878))
+
 # [1.6.0](https://github.com/eliotstocker/MetaStackR/compare/v1.5.4...v1.6.0) (2026-08-08)
 
 
