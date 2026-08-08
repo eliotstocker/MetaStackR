@@ -1,3 +1,10 @@
+## [1.5.4](https://github.com/eliotstocker/MetaStackR/compare/v1.5.3...v1.5.4) (2026-08-08)
+
+
+### Bug Fixes
+
+* **server:** ignore EventTypeCheckStatus webhooks to prevent self-reinforcing rate limit loop ([cca0f2e](https://github.com/eliotstocker/MetaStackR/commit/cca0f2e37b32cff4e7565be0799e6ac85489c9b6))
+
 ## [1.5.3](https://github.com/eliotstocker/MetaStackR/compare/v1.5.2...v1.5.3) (2026-08-08)
 
 
