@@ -1118,6 +1118,60 @@ func (c *GitHubClient) AreRequiredChecksPassing(ctx context.Context, repoFullNam
 	return true, nil, nil
 }
 
+// HasNonSubmoduleFilesChanged queries GitHub API to check if any files modified in the pull request lie outside submodule directories or .gitmodules.
+func (c *GitHubClient) HasNonSubmoduleFilesChanged(ctx context.Context, repoFullName string, prNumber int, installationID int64) (bool, error) {
+	if repoFullName == "" || prNumber <= 0 {
+		return false, nil
+	}
+
+	token, err := c.GetInstallationTokenForRepo(ctx, repoFullName, installationID)
+	if err != nil || token == "" {
+		if c.token != "" {
+			token = c.token
+		} else {
+			token = gitutils.GetGHToken()
+		}
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/pulls/%d/files", c.baseURL, repoFullName, prNumber)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := c.doRequestWithPATFallback(ctx, req, token, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch pull request files: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("GitHub API returned HTTP %d for pull files: %s", resp.StatusCode, string(body))
+	}
+
+	var files []struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&files); err != nil {
+		return false, err
+	}
+
+	for _, f := range files {
+		fn := strings.TrimSpace(f.Filename)
+		if fn == "" || fn == ".gitmodules" {
+			continue
+		}
+		// If file path is not within submodules directory (services/) and not a known submodule path
+		if !strings.HasPrefix(fn, "services/") && !strings.HasPrefix(fn, "submodules/") {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 func (c *GitHubClient) GetBranchHeadSHA(ctx context.Context, repoFullName string, branchName string, installationID int64) (string, error) {
 	token, err := c.GetInstallationTokenForRepo(ctx, repoFullName, installationID)
 	if err != nil || token == "" {

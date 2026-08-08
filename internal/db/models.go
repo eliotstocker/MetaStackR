@@ -24,18 +24,19 @@ const (
 )
 
 type TrackedMetaRepo struct {
-	ID             uuid.UUID `json:"id"`
-	RepoOwner      string    `json:"repo_owner"`
-	RepoName       string    `json:"repo_name"`
-	RepoFullName   string    `json:"repo_full_name"`
-	InstallationID string    `json:"installation_id"`
-	IsEnabled           bool      `json:"is_enabled"`
-	AllowCodePull       bool      `json:"allow_code_pull"`
-	RequireRootApproval bool      `json:"require_root_approval"`
-	AutoMergeEnabled    bool      `json:"auto_merge_enabled"`
-	RequiredChecks      []string  `json:"required_checks"`
-	DefaultMergeMethod  string    `json:"default_merge_method"`
-	CreatedAt           time.Time `json:"created_at"`
+	ID                   uuid.UUID `json:"id"`
+	RepoOwner            string    `json:"repo_owner"`
+	RepoName             string    `json:"repo_name"`
+	RepoFullName         string    `json:"repo_full_name"`
+	InstallationID       string    `json:"installation_id"`
+	IsEnabled            bool      `json:"is_enabled"`
+	AllowCodePull        bool      `json:"allow_code_pull"`
+	RequireRootApproval  bool      `json:"require_root_approval"`
+	AutoMergeEnabled     bool      `json:"auto_merge_enabled"`
+	SubmoduleChangesOnly bool      `json:"submodule_changes_only"`
+	RequiredChecks       []string  `json:"required_checks"`
+	DefaultMergeMethod   string    `json:"default_merge_method"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 type MetaPR struct {

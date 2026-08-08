@@ -61,14 +61,14 @@ func (r *Repository) CreateTrackedRepo(ctx context.Context, repo *TrackedMetaRep
 
 func (r *Repository) GetTrackedRepoByFullName(ctx context.Context, fullName string) (*TrackedMetaRepo, error) {
 	query := `
-		SELECT id, repo_owner, repo_name, repo_full_name, installation_id, is_enabled, allow_code_pull, require_root_approval, auto_merge_enabled, required_checks, default_merge_method, created_at
+		SELECT id, repo_owner, repo_name, repo_full_name, installation_id, is_enabled, allow_code_pull, require_root_approval, auto_merge_enabled, COALESCE(submodule_changes_only, true), required_checks, default_merge_method, created_at
 		FROM tracked_meta_repos
 		WHERE repo_full_name = $1
 	`
 	repo := &TrackedMetaRepo{}
 	var reqChecksBytes []byte
 	err := r.db.QueryRowContext(ctx, query, fullName).Scan(
-		&repo.ID, &repo.RepoOwner, &repo.RepoName, &repo.RepoFullName, &repo.InstallationID, &repo.IsEnabled, &repo.AllowCodePull, &repo.RequireRootApproval, &repo.AutoMergeEnabled, &reqChecksBytes, &repo.DefaultMergeMethod, &repo.CreatedAt,
+		&repo.ID, &repo.RepoOwner, &repo.RepoName, &repo.RepoFullName, &repo.InstallationID, &repo.IsEnabled, &repo.AllowCodePull, &repo.RequireRootApproval, &repo.AutoMergeEnabled, &repo.SubmoduleChangesOnly, &reqChecksBytes, &repo.DefaultMergeMethod, &repo.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -82,14 +82,14 @@ func (r *Repository) GetTrackedRepoByFullName(ctx context.Context, fullName stri
 
 func (r *Repository) GetTrackedRepoByID(ctx context.Context, id uuid.UUID) (*TrackedMetaRepo, error) {
 	query := `
-		SELECT id, repo_owner, repo_name, repo_full_name, installation_id, is_enabled, allow_code_pull, require_root_approval, auto_merge_enabled, required_checks, default_merge_method, created_at
+		SELECT id, repo_owner, repo_name, repo_full_name, installation_id, is_enabled, allow_code_pull, require_root_approval, auto_merge_enabled, COALESCE(submodule_changes_only, true), required_checks, default_merge_method, created_at
 		FROM tracked_meta_repos
 		WHERE id = $1
 	`
 	repo := &TrackedMetaRepo{}
 	var reqChecksBytes []byte
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&repo.ID, &repo.RepoOwner, &repo.RepoName, &repo.RepoFullName, &repo.InstallationID, &repo.IsEnabled, &repo.AllowCodePull, &repo.RequireRootApproval, &repo.AutoMergeEnabled, &reqChecksBytes, &repo.DefaultMergeMethod, &repo.CreatedAt,
+		&repo.ID, &repo.RepoOwner, &repo.RepoName, &repo.RepoFullName, &repo.InstallationID, &repo.IsEnabled, &repo.AllowCodePull, &repo.RequireRootApproval, &repo.AutoMergeEnabled, &repo.SubmoduleChangesOnly, &reqChecksBytes, &repo.DefaultMergeMethod, &repo.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -107,7 +107,7 @@ func (r *Repository) UpdateTrackedRepoInstallationID(ctx context.Context, id uui
 	return err
 }
 
-func (r *Repository) UpdateTrackedRepoSettings(ctx context.Context, repoFullName string, requireRootApproval bool, autoMergeEnabled bool, requiredChecks []string, defaultMergeMethod string) error {
+func (r *Repository) UpdateTrackedRepoSettings(ctx context.Context, repoFullName string, requireRootApproval bool, autoMergeEnabled bool, requiredChecks []string, defaultMergeMethod string, submoduleChangesOnly bool) error {
 	reqChecksJSON, _ := json.Marshal(requiredChecks)
 	if len(requiredChecks) == 0 {
 		reqChecksJSON = []byte("[]")
@@ -118,10 +118,10 @@ func (r *Repository) UpdateTrackedRepoSettings(ctx context.Context, repoFullName
 
 	query := `
 		UPDATE tracked_meta_repos 
-		SET require_root_approval = $1, auto_merge_enabled = $2, required_checks = $3, default_merge_method = $4
-		WHERE repo_full_name = $5
+		SET require_root_approval = $1, auto_merge_enabled = $2, required_checks = $3, default_merge_method = $4, submodule_changes_only = $5
+		WHERE repo_full_name = $6
 	`
-	_, err := r.db.ExecContext(ctx, query, requireRootApproval, autoMergeEnabled, string(reqChecksJSON), defaultMergeMethod, repoFullName)
+	_, err := r.db.ExecContext(ctx, query, requireRootApproval, autoMergeEnabled, string(reqChecksJSON), defaultMergeMethod, submoduleChangesOnly, repoFullName)
 	return err
 }
 

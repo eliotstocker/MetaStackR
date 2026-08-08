@@ -711,6 +711,7 @@ func newConfigCmd() *cobra.Command {
 	var requiredChecksFlag string
 	var requireRootApprovalFlag string
 	var autoMergeFlag string
+	var submoduleChangesOnlyFlag string
 
 	cmd := &cobra.Command{
 		Use:     "config [key] [value]",
@@ -753,17 +754,18 @@ func newConfigCmd() *cobra.Command {
 			}
 
 			var currentSettings struct {
-				ID                  string   `json:"id"`
-				RepoOwner           string   `json:"repo_owner"`
-				RepoName            string   `json:"repo_name"`
-				RepoFullName        string   `json:"repo_full_name"`
-				InstallationID      string   `json:"installation_id"`
-				IsEnabled           bool     `json:"is_enabled"`
-				AllowCodePull       bool     `json:"allow_code_pull"`
-				RequireRootApproval bool     `json:"require_root_approval"`
-				AutoMergeEnabled    bool     `json:"auto_merge_enabled"`
-				RequiredChecks      []string `json:"required_checks"`
-				DefaultMergeMethod  string   `json:"default_merge_method"`
+				ID                   string   `json:"id"`
+				RepoOwner            string   `json:"repo_owner"`
+				RepoName             string   `json:"repo_name"`
+				RepoFullName         string   `json:"repo_full_name"`
+				InstallationID       string   `json:"installation_id"`
+				IsEnabled            bool     `json:"is_enabled"`
+				AllowCodePull        bool     `json:"allow_code_pull"`
+				RequireRootApproval  bool     `json:"require_root_approval"`
+				AutoMergeEnabled     bool     `json:"auto_merge_enabled"`
+				SubmoduleChangesOnly bool     `json:"submodule_changes_only"`
+				RequiredChecks       []string `json:"required_checks"`
+				DefaultMergeMethod   string   `json:"default_merge_method"`
 			}
 			if err := json.NewDecoder(resp.Body).Decode(&currentSettings); err != nil {
 				if jsonOutput {
@@ -780,6 +782,8 @@ func newConfigCmd() *cobra.Command {
 					return "auto-merge"
 				case "require-root-approval", "require-approval", "root-approval", "require_root_approval":
 					return "require-root-approval"
+				case "submodule-changes-only", "submodule-only", "require-submodule-only", "submodule_changes_only":
+					return "submodule-changes-only"
 				case "merge-method", "method", "default-merge-method", "default_merge_method":
 					return "merge-method"
 				case "required-checks", "checks", "required_checks":
@@ -797,6 +801,7 @@ func newConfigCmd() *cobra.Command {
 				key := normalizeKey(args[0])
 				reqApproval := currentSettings.RequireRootApproval
 				autoMerge := currentSettings.AutoMergeEnabled
+				subOnly := currentSettings.SubmoduleChangesOnly
 				method := currentSettings.DefaultMergeMethod
 				reqChecks := currentSettings.RequiredChecks
 
@@ -805,19 +810,21 @@ func newConfigCmd() *cobra.Command {
 					reqApproval = false
 				case "auto-merge":
 					autoMerge = true
+				case "submodule-changes-only":
+					subOnly = true
 				case "merge-method":
 					method = "merge"
 				case "required-checks":
 					reqChecks = []string{}
 				default:
-					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, merge-method, required-checks", key)
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks", key)
 				}
 
-				return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks)
+				return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks, subOnly)
 			}
 
 			// Mode 2: No args or --list -> List all config key-values (git config --list)
-			if (len(args) == 0 && !cmd.Flags().Changed("require-root-approval") && !cmd.Flags().Changed("auto-merge") && !cmd.Flags().Changed("merge-method") && !cmd.Flags().Changed("required-checks")) || listFlag {
+			if (len(args) == 0 && !cmd.Flags().Changed("require-root-approval") && !cmd.Flags().Changed("auto-merge") && !cmd.Flags().Changed("merge-method") && !cmd.Flags().Changed("required-checks") && !cmd.Flags().Changed("submodule-changes-only")) || listFlag {
 				if jsonOutput {
 					printJSON(true, "Current repository policy settings", currentSettings)
 					return nil
@@ -826,13 +833,14 @@ func newConfigCmd() *cobra.Command {
 				checksVal := strings.Join(currentSettings.RequiredChecks, ",")
 				fmt.Printf("auto-merge=%t\n", currentSettings.AutoMergeEnabled)
 				fmt.Printf("require-root-approval=%t\n", currentSettings.RequireRootApproval)
+				fmt.Printf("submodule-changes-only=%t\n", currentSettings.SubmoduleChangesOnly)
 				fmt.Printf("merge-method=%s\n", currentSettings.DefaultMergeMethod)
 				fmt.Printf("required-checks=%s\n", checksVal)
 				return nil
 			}
 
 			// Mode 3: Single key arg -> GET specific key value (git config key)
-			if len(args) == 1 && !cmd.Flags().Changed("require-root-approval") && !cmd.Flags().Changed("auto-merge") && !cmd.Flags().Changed("merge-method") && !cmd.Flags().Changed("required-checks") {
+			if len(args) == 1 && !cmd.Flags().Changed("require-root-approval") && !cmd.Flags().Changed("auto-merge") && !cmd.Flags().Changed("merge-method") && !cmd.Flags().Changed("required-checks") && !cmd.Flags().Changed("submodule-changes-only") {
 				key := normalizeKey(args[0])
 				var val string
 				switch key {
@@ -840,12 +848,14 @@ func newConfigCmd() *cobra.Command {
 					val = fmt.Sprintf("%t", currentSettings.AutoMergeEnabled)
 				case "require-root-approval":
 					val = fmt.Sprintf("%t", currentSettings.RequireRootApproval)
+				case "submodule-changes-only":
+					val = fmt.Sprintf("%t", currentSettings.SubmoduleChangesOnly)
 				case "merge-method":
 					val = currentSettings.DefaultMergeMethod
 				case "required-checks":
 					val = strings.Join(currentSettings.RequiredChecks, ",")
 				default:
-					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, merge-method, required-checks", key)
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks", key)
 				}
 
 				if jsonOutput {
@@ -859,6 +869,7 @@ func newConfigCmd() *cobra.Command {
 			// Mode 4: Key + Value args or Flags -> SET config key value (git config key value)
 			reqApproval := currentSettings.RequireRootApproval
 			autoMerge := currentSettings.AutoMergeEnabled
+			subOnly := currentSettings.SubmoduleChangesOnly
 			method := currentSettings.DefaultMergeMethod
 			reqChecks := currentSettings.RequiredChecks
 
@@ -871,6 +882,8 @@ func newConfigCmd() *cobra.Command {
 					autoMerge = strings.ToLower(val) == "true" || val == "1"
 				case "require-root-approval":
 					reqApproval = strings.ToLower(val) == "true" || val == "1"
+				case "submodule-changes-only":
+					subOnly = strings.ToLower(val) == "true" || val == "1"
 				case "merge-method":
 					valLower := strings.ToLower(strings.TrimSpace(val))
 					if valLower != "merge" && valLower != "squash" && valLower != "rebase" {
@@ -887,7 +900,7 @@ func newConfigCmd() *cobra.Command {
 						}
 					}
 				default:
-					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, merge-method, required-checks", key)
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks", key)
 				}
 			}
 
@@ -897,6 +910,9 @@ func newConfigCmd() *cobra.Command {
 			}
 			if cmd.Flags().Changed("auto-merge") {
 				autoMerge = strings.ToLower(autoMergeFlag) == "true" || autoMergeFlag == "1"
+			}
+			if cmd.Flags().Changed("submodule-changes-only") {
+				subOnly = strings.ToLower(submoduleChangesOnlyFlag) == "true" || submoduleChangesOnlyFlag == "1"
 			}
 			if cmd.Flags().Changed("merge-method") {
 				method = strings.ToLower(strings.TrimSpace(mergeMethodFlag))
@@ -912,7 +928,7 @@ func newConfigCmd() *cobra.Command {
 				}
 			}
 
-			return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks)
+			return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks, subOnly)
 		},
 	}
 
@@ -922,19 +938,21 @@ func newConfigCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&unsetFlag, "unset", false, "Unset a config key")
 	cmd.Flags().StringVar(&requireRootApprovalFlag, "require-root-approval", "", "Require root PR approval before auto-merging (true|false)")
 	cmd.Flags().StringVar(&autoMergeFlag, "auto-merge", "", "Enable auto cascade merge (true|false)")
+	cmd.Flags().StringVar(&submoduleChangesOnlyFlag, "submodule-changes-only", "", "Auto-merge only when changes are restricted to submodules (true|false)")
 	cmd.Flags().StringVar(&mergeMethodFlag, "merge-method", "", "Default merge method (merge|squash|rebase)")
 	cmd.Flags().StringVar(&requiredChecksFlag, "required-checks", "", "Comma-separated list of required status check names")
 
 	return cmd
 }
 
-func updateRepoSettings(serverURL, repoName string, reqApproval, autoMerge bool, method string, reqChecks []string) error {
+func updateRepoSettings(serverURL, repoName string, reqApproval, autoMerge bool, method string, reqChecks []string, subOnly bool) error {
 	updatePayload := map[string]interface{}{
-		"repo":                  repoName,
-		"require_root_approval": reqApproval,
-		"auto_merge_enabled":    autoMerge,
-		"required_checks":       reqChecks,
-		"default_merge_method":  method,
+		"repo":                   repoName,
+		"require_root_approval":  reqApproval,
+		"auto_merge_enabled":     autoMerge,
+		"submodule_changes_only": subOnly,
+		"required_checks":        reqChecks,
+		"default_merge_method":   method,
 	}
 
 	jsonBytes, _ := json.Marshal(updatePayload)

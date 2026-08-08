@@ -399,6 +399,10 @@
               <input type="checkbox" id="metastackr-auto-merge-chk" checked>
               <span><strong>Enable Auto Cascade Merge</strong> — Automatically trigger cascade merge when all policy rules pass</span>
             </label>
+            <label class="metastackr-checkbox-label">
+              <input type="checkbox" id="metastackr-submodule-only-chk" checked>
+              <span><strong>Submodule Only Changes</strong> — Auto-merge only when changes are restricted to submodules (pause if root files are modified)</span>
+            </label>
             <div class="metastackr-form-group" style="margin-top: 4px;">
               <label for="metastackr-req-checks-input"><strong>Required Status Checks:</strong> <span style="font-weight: normal; opacity: 0.8;">(comma-separated check names, e.g. <code>ci/build, lint</code>)</span></label>
               <input type="text" id="metastackr-req-checks-input" class="metastackr-form-control" value="" placeholder="e.g. ci/build, test" style="max-width: 450px;">
@@ -431,11 +435,13 @@
           if (settings) {
             const chkApproval = document.getElementById('metastackr-require-approval-chk');
             const chkAuto = document.getElementById('metastackr-auto-merge-chk');
+            const chkSubOnly = document.getElementById('metastackr-submodule-only-chk');
             const inputChecks = document.getElementById('metastackr-req-checks-input');
             const selectMethod = document.getElementById('metastackr-merge-method-select');
 
             if (chkApproval) chkApproval.checked = settings.require_root_approval !== false;
             if (chkAuto) chkAuto.checked = settings.auto_merge_enabled !== false;
+            if (chkSubOnly) chkSubOnly.checked = settings.submodule_changes_only !== false;
             if (inputChecks) inputChecks.value = (settings.required_checks || []).join(', ');
             if (selectMethod) selectMethod.value = settings.default_merge_method || 'merge';
           }
@@ -451,6 +457,7 @@
         }
         const reqApproval = document.getElementById('metastackr-require-approval-chk').checked;
         const autoMerge = document.getElementById('metastackr-auto-merge-chk').checked;
+        const subOnly = document.getElementById('metastackr-submodule-only-chk').checked;
         const checksRaw = document.getElementById('metastackr-req-checks-input').value;
         const mergeMethod = document.getElementById('metastackr-merge-method-select').value;
         const reqChecks = checksRaw.split(',').map(s => s.trim()).filter(Boolean);
@@ -470,6 +477,7 @@
             repo: activeRepo,
             require_root_approval: reqApproval,
             auto_merge_enabled: autoMerge,
+            submodule_changes_only: subOnly,
             required_checks: reqChecks,
             default_merge_method: mergeMethod
           })

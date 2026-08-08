@@ -41,5 +41,7 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		return fmt.Errorf("failed to execute migration: %w", err)
 	}
 
+	_, _ = db.ExecContext(ctx, "ALTER TABLE tracked_meta_repos ADD COLUMN IF NOT EXISTS submodule_changes_only BOOLEAN NOT NULL DEFAULT TRUE")
+
 	return nil
 }

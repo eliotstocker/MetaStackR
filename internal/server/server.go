@@ -400,6 +400,19 @@ func (s *Server) evaluateMetaPRReadiness(ctx context.Context, metaPR *db.MetaPR)
 		}
 	}
 
+	// Rule 5: Submodule Changes Only (if enabled, default true)
+	if trackedMeta.SubmoduleChangesOnly && s.gh != nil && metaPR.PRNumber > 0 {
+		nonSubFiles, err := s.gh.HasNonSubmoduleFilesChanged(ctx, trackedMeta.RepoFullName, metaPR.PRNumber, instID)
+		if err != nil {
+			log.Printf("[policy] Failed to verify PR changed files for %s#%d: %v", trackedMeta.RepoFullName, metaPR.PRNumber, err)
+			return
+		}
+		if nonSubFiles {
+			log.Printf("[policy] Meta PR %s#%d has modified files outside submodules. Auto-merge paused.", trackedMeta.RepoFullName, metaPR.PRNumber)
+			return
+		}
+	}
+
 	if metaPR.Status == "OPEN" {
 		log.Printf("[policy] All auto-merge rules passed for Meta PR #%d! Triggering cascade merge.", metaPR.PRNumber)
 		_ = s.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "MERGING", metaPR.LockVersion)
@@ -583,11 +596,12 @@ func (s *Server) handleTrackRepo(w http.ResponseWriter, r *http.Request) {
 }
 
 type RepoSettingsRequest struct {
-	RepoFullName        string   `json:"repo"`
-	RequireRootApproval bool     `json:"require_root_approval"`
-	AutoMergeEnabled    bool     `json:"auto_merge_enabled"`
-	RequiredChecks      []string `json:"required_checks"`
-	DefaultMergeMethod  string   `json:"default_merge_method"`
+	RepoFullName         string   `json:"repo"`
+	RequireRootApproval  bool     `json:"require_root_approval"`
+	AutoMergeEnabled     bool     `json:"auto_merge_enabled"`
+	SubmoduleChangesOnly bool     `json:"submodule_changes_only"`
+	RequiredChecks       []string `json:"required_checks"`
+	DefaultMergeMethod   string   `json:"default_merge_method"`
 }
 
 func (s *Server) handleGetRepoSettings(w http.ResponseWriter, r *http.Request) {
@@ -629,7 +643,7 @@ func (s *Server) handleUpdateRepoSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	err := s.repo.UpdateTrackedRepoSettings(r.Context(), req.RepoFullName, req.RequireRootApproval, req.AutoMergeEnabled, req.RequiredChecks, req.DefaultMergeMethod)
+	err := s.repo.UpdateTrackedRepoSettings(r.Context(), req.RepoFullName, req.RequireRootApproval, req.AutoMergeEnabled, req.RequiredChecks, req.DefaultMergeMethod, req.SubmoduleChangesOnly)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to update settings: %v", err), http.StatusInternalServerError)
 		return
