@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/eliotstocker/MetaStackR/compare/v1.3.0...v1.4.0) (2026-08-08)
+
+
+### Features
+
+* **cli:** add git-meta settings command to inspect and update policy rules ([7e71241](https://github.com/eliotstocker/MetaStackR/commit/7e71241f5ca7f68ba43d18e2648a9042003ecef1))
+
 # [1.3.0](https://github.com/eliotstocker/MetaStackR/compare/v1.2.3...v1.3.0) (2026-08-08)
 
 
