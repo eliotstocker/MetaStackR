@@ -584,7 +584,7 @@ func (c *GitHubClient) MergePullRequest(ctx context.Context, repoFullName string
 			break
 		}
 
-		if (resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusUnprocessableEntity) && attempt < 4 {
+		if (resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusUnprocessableEntity || resp.StatusCode == http.StatusMethodNotAllowed) && attempt < 4 {
 			resp.Body.Close()
 			continue
 		}
