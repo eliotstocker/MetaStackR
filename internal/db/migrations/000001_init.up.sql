@@ -6,6 +6,10 @@ CREATE TABLE IF NOT EXISTS tracked_meta_repos (
     installation_id VARCHAR(255) NOT NULL,
     is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     allow_code_pull BOOLEAN NOT NULL DEFAULT FALSE,
+    require_root_approval BOOLEAN NOT NULL DEFAULT TRUE,
+    auto_merge_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    required_checks JSONB NOT NULL DEFAULT '[]'::jsonb,
+    default_merge_method VARCHAR(50) NOT NULL DEFAULT 'merge',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -15,6 +19,7 @@ CREATE TABLE IF NOT EXISTS meta_prs (
     pr_number INT NOT NULL,
     branch_name VARCHAR(255) NOT NULL,
     base_branch VARCHAR(255) NOT NULL DEFAULT 'main',
+    merge_method VARCHAR(50) NOT NULL DEFAULT 'merge',
     status VARCHAR(50) NOT NULL DEFAULT 'OPEN', -- OPEN, MERGING, MERGED, FAILED_DRIFT, FAILED_PARTIAL
     lock_version INT NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -50,3 +55,10 @@ CREATE TABLE IF NOT EXISTS merge_audit_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_meta_prs_reconcile ON meta_prs(status) WHERE status IN ('MERGING', 'SYNCING');
+
+CREATE TABLE IF NOT EXISTS app_installation_tokens (
+    installation_id BIGINT PRIMARY KEY,
+    token TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

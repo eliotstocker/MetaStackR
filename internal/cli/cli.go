@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -95,6 +97,28 @@ func NewRootCmd() *cobra.Command {
 		}
 	})
 
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		cmdName := cmd.Name()
+		if cmdName == "init" || cmdName == "version" || cmdName == "help" || cmdName == "agents" || cmdName == "completion" || cmdName == "git-meta" {
+			return
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			return
+		}
+
+		if !IsInitialized(cwd) {
+			warnMsg := fmt.Sprintf("⚠️ WARNING: Repository has not been initialized with '%s init'. Run '%s init' to register webhooks and enable backend PR tracking.", useCmd, useCmd)
+			if jsonOutput {
+				fmt.Fprintln(os.Stderr, warnMsg)
+			} else {
+				fmt.Println(warningStyle.Render(warnMsg))
+				fmt.Println()
+			}
+		}
+	}
+
 	rootCmd.AddCommand(newStatusCmd())
 	rootCmd.AddCommand(newCheckoutCmd())
 	rootCmd.AddCommand(newCommitCmd())
@@ -103,13 +127,92 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newSyncCmd())
 	rootCmd.AddCommand(newRebaseCmd())
 	rootCmd.AddCommand(newRetryMergeCmd())
+	rootCmd.AddCommand(newConfigCmd())
+	rootCmd.AddCommand(newSettingsCmd())
 	rootCmd.AddCommand(newInstallHooksCmd())
 	rootCmd.AddCommand(newAgentsCmd())
 	rootCmd.AddCommand(newSetupWebhookCmd())
 	rootCmd.AddCommand(newInitCmd())
 	rootCmd.AddCommand(newVersionCmd())
+	rootCmd.AddCommand(newCompletionCmd(rootCmd))
 
 	return rootCmd
+}
+
+func newCompletionCmd(rootCmd *cobra.Command) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "completion [bash|zsh|fish|powershell]",
+		Short: "Generate the autocompletion script for git-meta and git meta",
+		Long: `To load completions:
+
+  # Zsh:
+  # Add to your ~/.zshrc:
+  source <(git meta completion zsh)
+
+  # Bash:
+  # Add to your ~/.bashrc:
+  source <(git meta completion bash)
+
+  # Fish:
+  # Add to your ~/.config/fish/config.fish:
+  git meta completion fish | source
+`,
+		ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
+		Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch args[0] {
+			case "bash":
+				var buf bytes.Buffer
+				if err := rootCmd.GenBashCompletionV2(&buf, true); err != nil {
+					return err
+				}
+				buf.WriteString("\n# Git subcommand completion for 'git meta'\n_git_meta() {\n    _git-meta \"$@\"\n}\ncomplete -F _git_meta git-meta\n")
+				fmt.Print(buf.String())
+			case "zsh":
+				var buf bytes.Buffer
+				if err := rootCmd.GenZshCompletion(&buf); err != nil {
+					return err
+				}
+				buf.WriteString("\n# Git subcommand completion for 'git meta'\n_git_meta() {\n    _git-meta \"$@\"\n}\ncompdef _git_meta git-meta\ncompdef _git_meta 'git meta'\n")
+				fmt.Print(buf.String())
+			case "fish":
+				return rootCmd.GenFishCompletion(os.Stdout, true)
+			case "powershell":
+				return rootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
+			}
+			return nil
+		},
+	}
+	return cmd
+}
+
+func GetRepoRoot(dir string) string {
+	root, err := gitutils.ExecGit(dir, "rev-parse", "--show-toplevel")
+	if err == nil && strings.TrimSpace(root) != "" {
+		return strings.TrimSpace(root)
+	}
+	return dir
+}
+
+func IsInitialized(rootDir string) bool {
+	root := GetRepoRoot(rootDir)
+
+	val, err := gitutils.ExecGit(root, "config", "--get", "metastackr.initialized")
+	if err == nil && strings.TrimSpace(val) == "true" {
+		return true
+	}
+
+	postCheckoutPath := filepath.Join(root, ".git", "hooks", "post-checkout")
+	if data, err := os.ReadFile(postCheckoutPath); err == nil && strings.Contains(string(data), "git-meta") {
+		return true
+	}
+
+	agentsPath := filepath.Join(root, "AGENTS.md")
+	if data, err := os.ReadFile(agentsPath); err == nil && (strings.Contains(string(data), "MetaStackR") || strings.Contains(string(data), "git-meta")) {
+		return true
+	}
+
+	return false
 }
 
 func newStatusCmd() *cobra.Command {
@@ -425,6 +528,11 @@ func newCreatePRCmd() *cobra.Command {
 				return err
 			}
 
+			opts.MergeMethod = strings.ToLower(strings.TrimSpace(opts.MergeMethod))
+			if opts.MergeMethod != "" && opts.MergeMethod != "merge" && opts.MergeMethod != "squash" && opts.MergeMethod != "rebase" {
+				return fmt.Errorf("invalid merge method '%s'. Allowed values: merge, squash, rebase", opts.MergeMethod)
+			}
+
 			results, err := gitutils.CreatePRs(cwd, opts)
 			if err != nil {
 				if jsonOutput {
@@ -461,6 +569,7 @@ func newCreatePRCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&opts.Title, "title", "t", "", "Pull request title (defaults to latest commit message)")
 	cmd.Flags().StringVarP(&opts.Body, "body", "b", "", "Pull request description body")
 	cmd.Flags().StringVar(&opts.BaseBranch, "base", "main", "Target base branch for pull requests")
+	cmd.Flags().StringVar(&opts.MergeMethod, "merge-method", "merge", "Merge method to use when auto-merging on GitHub (merge, squash, rebase)")
 	cmd.Flags().BoolVarP(&opts.Draft, "draft", "d", false, "Create draft pull requests")
 	cmd.Flags().BoolVarP(&opts.ForceWeb, "web", "w", false, "Open PR compare pages in default web browser")
 
@@ -588,6 +697,295 @@ func newRetryMergeCmd() *cobra.Command {
 	return cmd
 }
 
+func newSettingsCmd() *cobra.Command {
+	return newConfigCmd()
+}
+
+func newConfigCmd() *cobra.Command {
+	var serverURL string
+	var repoOverride string
+	var listFlag bool
+	var unsetFlag bool
+
+	var mergeMethodFlag string
+	var requiredChecksFlag string
+	var requireRootApprovalFlag string
+	var autoMergeFlag string
+	var submoduleChangesOnlyFlag string
+
+	cmd := &cobra.Command{
+		Use:     "config [key] [value]",
+		Aliases: []string{"settings", "policy"},
+		Short:   "Get, set, or list repository policy settings (git config style)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cwd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+
+			repoName := repoOverride
+			if repoName == "" {
+				repoName, err = gitutils.GetMetaRepoName(cwd)
+				if err != nil || repoName == "" {
+					return fmt.Errorf("could not determine meta-repo origin: %w", err)
+				}
+			}
+
+			// 1. Fetch current settings first
+			getURL := fmt.Sprintf("%s/api/v1/repos/settings?repo=%s", serverURL, url.QueryEscape(repoName))
+			resp, err := http.Get(getURL)
+			if err != nil {
+				if jsonOutput {
+					printJSON(false, fmt.Sprintf("failed to fetch repo settings: %v", err), nil)
+					return nil
+				}
+				return fmt.Errorf("failed to contact backend server: %w", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				errStr := fmt.Sprintf("failed to fetch settings (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
+				if jsonOutput {
+					printJSON(false, errStr, nil)
+					return nil
+				}
+				return fmt.Errorf("%s", errStr)
+			}
+
+			var currentSettings struct {
+				ID                   string   `json:"id"`
+				RepoOwner            string   `json:"repo_owner"`
+				RepoName             string   `json:"repo_name"`
+				RepoFullName         string   `json:"repo_full_name"`
+				InstallationID       string   `json:"installation_id"`
+				IsEnabled            bool     `json:"is_enabled"`
+				AllowCodePull        bool     `json:"allow_code_pull"`
+				RequireRootApproval  bool     `json:"require_root_approval"`
+				AutoMergeEnabled     bool     `json:"auto_merge_enabled"`
+				SubmoduleChangesOnly bool     `json:"submodule_changes_only"`
+				RequiredChecks       []string `json:"required_checks"`
+				DefaultMergeMethod   string   `json:"default_merge_method"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&currentSettings); err != nil {
+				if jsonOutput {
+					printJSON(false, fmt.Sprintf("failed to parse settings response: %v", err), nil)
+					return nil
+				}
+				return err
+			}
+
+			normalizeKey := func(k string) string {
+				k = strings.ToLower(strings.TrimSpace(k))
+				switch k {
+				case "auto-merge", "automerge", "auto_merge", "auto_merge_enabled":
+					return "auto-merge"
+				case "require-root-approval", "require-approval", "root-approval", "require_root_approval":
+					return "require-root-approval"
+				case "submodule-changes-only", "submodule-only", "require-submodule-only", "submodule_changes_only":
+					return "submodule-changes-only"
+				case "merge-method", "method", "default-merge-method", "default_merge_method":
+					return "merge-method"
+				case "required-checks", "checks", "required_checks":
+					return "required-checks"
+				default:
+					return k
+				}
+			}
+
+			// Mode 1: Unset key (git config --unset key)
+			if unsetFlag {
+				if len(args) == 0 {
+					return fmt.Errorf("you must specify a key to unset (e.g. 'git meta config --unset required-checks')")
+				}
+				key := normalizeKey(args[0])
+				reqApproval := currentSettings.RequireRootApproval
+				autoMerge := currentSettings.AutoMergeEnabled
+				subOnly := currentSettings.SubmoduleChangesOnly
+				method := currentSettings.DefaultMergeMethod
+				reqChecks := currentSettings.RequiredChecks
+
+				switch key {
+				case "require-root-approval":
+					reqApproval = false
+				case "auto-merge":
+					autoMerge = true
+				case "submodule-changes-only":
+					subOnly = true
+				case "merge-method":
+					method = "merge"
+				case "required-checks":
+					reqChecks = []string{}
+				default:
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks", key)
+				}
+
+				return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks, subOnly)
+			}
+
+			// Mode 2: No args or --list -> List all config key-values (git config --list)
+			if (len(args) == 0 && !cmd.Flags().Changed("require-root-approval") && !cmd.Flags().Changed("auto-merge") && !cmd.Flags().Changed("merge-method") && !cmd.Flags().Changed("required-checks") && !cmd.Flags().Changed("submodule-changes-only")) || listFlag {
+				if jsonOutput {
+					printJSON(true, "Current repository policy settings", currentSettings)
+					return nil
+				}
+
+				checksVal := strings.Join(currentSettings.RequiredChecks, ",")
+				fmt.Printf("auto-merge=%t\n", currentSettings.AutoMergeEnabled)
+				fmt.Printf("require-root-approval=%t\n", currentSettings.RequireRootApproval)
+				fmt.Printf("submodule-changes-only=%t\n", currentSettings.SubmoduleChangesOnly)
+				fmt.Printf("merge-method=%s\n", currentSettings.DefaultMergeMethod)
+				fmt.Printf("required-checks=%s\n", checksVal)
+				return nil
+			}
+
+			// Mode 3: Single key arg -> GET specific key value (git config key)
+			if len(args) == 1 && !cmd.Flags().Changed("require-root-approval") && !cmd.Flags().Changed("auto-merge") && !cmd.Flags().Changed("merge-method") && !cmd.Flags().Changed("required-checks") && !cmd.Flags().Changed("submodule-changes-only") {
+				key := normalizeKey(args[0])
+				var val string
+				switch key {
+				case "auto-merge":
+					val = fmt.Sprintf("%t", currentSettings.AutoMergeEnabled)
+				case "require-root-approval":
+					val = fmt.Sprintf("%t", currentSettings.RequireRootApproval)
+				case "submodule-changes-only":
+					val = fmt.Sprintf("%t", currentSettings.SubmoduleChangesOnly)
+				case "merge-method":
+					val = currentSettings.DefaultMergeMethod
+				case "required-checks":
+					val = strings.Join(currentSettings.RequiredChecks, ",")
+				default:
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks", key)
+				}
+
+				if jsonOutput {
+					printJSON(true, "", map[string]string{"key": key, "value": val})
+				} else {
+					fmt.Println(val)
+				}
+				return nil
+			}
+
+			// Mode 4: Key + Value args or Flags -> SET config key value (git config key value)
+			reqApproval := currentSettings.RequireRootApproval
+			autoMerge := currentSettings.AutoMergeEnabled
+			subOnly := currentSettings.SubmoduleChangesOnly
+			method := currentSettings.DefaultMergeMethod
+			reqChecks := currentSettings.RequiredChecks
+
+			if len(args) >= 2 {
+				key := normalizeKey(args[0])
+				val := args[1]
+
+				switch key {
+				case "auto-merge":
+					autoMerge = strings.ToLower(val) == "true" || val == "1"
+				case "require-root-approval":
+					reqApproval = strings.ToLower(val) == "true" || val == "1"
+				case "submodule-changes-only":
+					subOnly = strings.ToLower(val) == "true" || val == "1"
+				case "merge-method":
+					valLower := strings.ToLower(strings.TrimSpace(val))
+					if valLower != "merge" && valLower != "squash" && valLower != "rebase" {
+						return fmt.Errorf("invalid merge method '%s'. Allowed values: merge, squash, rebase", val)
+					}
+					method = valLower
+				case "required-checks":
+					reqChecks = nil
+					if strings.TrimSpace(val) != "" {
+						for _, c := range strings.Split(val, ",") {
+							if trimmed := strings.TrimSpace(c); trimmed != "" {
+								reqChecks = append(reqChecks, trimmed)
+							}
+						}
+					}
+				default:
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks", key)
+				}
+			}
+
+			// Handle optional flag overrides
+			if cmd.Flags().Changed("require-root-approval") {
+				reqApproval = strings.ToLower(requireRootApprovalFlag) == "true" || requireRootApprovalFlag == "1"
+			}
+			if cmd.Flags().Changed("auto-merge") {
+				autoMerge = strings.ToLower(autoMergeFlag) == "true" || autoMergeFlag == "1"
+			}
+			if cmd.Flags().Changed("submodule-changes-only") {
+				subOnly = strings.ToLower(submoduleChangesOnlyFlag) == "true" || submoduleChangesOnlyFlag == "1"
+			}
+			if cmd.Flags().Changed("merge-method") {
+				method = strings.ToLower(strings.TrimSpace(mergeMethodFlag))
+			}
+			if cmd.Flags().Changed("required-checks") {
+				reqChecks = nil
+				if strings.TrimSpace(requiredChecksFlag) != "" {
+					for _, c := range strings.Split(requiredChecksFlag, ",") {
+						if trimmed := strings.TrimSpace(c); trimmed != "" {
+							reqChecks = append(reqChecks, trimmed)
+						}
+					}
+				}
+			}
+
+			return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks, subOnly)
+		},
+	}
+
+	cmd.Flags().StringVar(&serverURL, "server", "https://api.metastac.kr", "MetaStackr backend server URL")
+	cmd.Flags().StringVar(&repoOverride, "repo", "", "Meta-repository full name (e.g. owner/repo)")
+	cmd.Flags().BoolVarP(&listFlag, "list", "l", false, "List all config key-values")
+	cmd.Flags().BoolVar(&unsetFlag, "unset", false, "Unset a config key")
+	cmd.Flags().StringVar(&requireRootApprovalFlag, "require-root-approval", "", "Require root PR approval before auto-merging (true|false)")
+	cmd.Flags().StringVar(&autoMergeFlag, "auto-merge", "", "Enable auto cascade merge (true|false)")
+	cmd.Flags().StringVar(&submoduleChangesOnlyFlag, "submodule-changes-only", "", "Auto-merge only when changes are restricted to submodules (true|false)")
+	cmd.Flags().StringVar(&mergeMethodFlag, "merge-method", "", "Default merge method (merge|squash|rebase)")
+	cmd.Flags().StringVar(&requiredChecksFlag, "required-checks", "", "Comma-separated list of required status check names")
+
+	return cmd
+}
+
+func updateRepoSettings(serverURL, repoName string, reqApproval, autoMerge bool, method string, reqChecks []string, subOnly bool) error {
+	updatePayload := map[string]interface{}{
+		"repo":                   repoName,
+		"require_root_approval":  reqApproval,
+		"auto_merge_enabled":     autoMerge,
+		"submodule_changes_only": subOnly,
+		"required_checks":        reqChecks,
+		"default_merge_method":   method,
+	}
+
+	jsonBytes, _ := json.Marshal(updatePayload)
+	postURL := serverURL + "/api/v1/repos/settings"
+	postResp, err := http.Post(postURL, "application/json", bytes.NewReader(jsonBytes))
+	if err != nil {
+		if jsonOutput {
+			printJSON(false, err.Error(), nil)
+			return nil
+		}
+		return fmt.Errorf("failed to contact backend server: %w", err)
+	}
+	defer postResp.Body.Close()
+
+	if postResp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(postResp.Body)
+		errStr := fmt.Sprintf("failed to update settings (HTTP %d): %s", postResp.StatusCode, string(bodyBytes))
+		if jsonOutput {
+			printJSON(false, errStr, nil)
+			return nil
+		}
+		return fmt.Errorf("%s", errStr)
+	}
+
+	var updateResult map[string]interface{}
+	_ = json.NewDecoder(postResp.Body).Decode(&updateResult)
+
+	if jsonOutput {
+		printJSON(true, "Repository policy settings updated successfully", updateResult)
+	}
+	return nil
+}
+
 func GetAgentsMDContent() string {
 	return `# Repository Agent Guidelines
 
@@ -637,6 +1035,10 @@ MetaStackr orchestrates development across multi-repository meta-repos with Git 
 - **Retry Cascade Merges**:
   ` + "`" + `git meta retry-merge --pr <pr-number> --json` + "`" + `
   Re-triggers cascade merges on partially failed PRs.
+
+- **Configure Auto-Merge Policy Rules**:
+  ` + "`" + `git meta settings [--require-root-approval=true|false] [--auto-merge=true|false] [--merge-method=merge|squash|rebase] [--required-checks="ci/build,lint"] --json` + "`" + `
+  Inspects or updates repository policy rules and auto-merge settings.
 `
 }
 
@@ -716,6 +1118,8 @@ func newSetupWebhookCmd() *cobra.Command {
 				return err
 			}
 
+			_, _ = gitutils.ExecGit(cwd, "config", "metastackr.initialized", "true")
+
 			if jsonOutput {
 				printJSON(true, "Webhook registered successfully", map[string]string{
 					"target_url":     targetURL,
@@ -741,6 +1145,7 @@ func newInitCmd() *cobra.Command {
 	var webhookURL string
 	var secret string
 	var allowCodePull bool
+	var skipWebhooks bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -773,6 +1178,9 @@ func newInitCmd() *cobra.Command {
 				return err
 			}
 
+			var appInstalledOnRepo bool
+			var appInstalledOnAccount bool
+
 			trackURL := fmt.Sprintf("%s/api/v1/repos/track", serverURL)
 			req, err := http.NewRequest(http.MethodPost, trackURL, bytes.NewReader(trackBytes))
 			if err != nil {
@@ -800,6 +1208,12 @@ func newInitCmd() *cobra.Command {
 						if id, ok := trackResp["repo_id"].(string); ok {
 							serverRepoID = id
 						}
+						if appInstalled, ok := trackResp["github_app_installed"].(bool); ok && appInstalled {
+							appInstalledOnRepo = true
+						}
+						if accountInstalled, ok := trackResp["app_installed_on_account"].(bool); ok && accountInstalled {
+							appInstalledOnAccount = true
+						}
 					}
 				}
 			}
@@ -810,6 +1224,28 @@ func newInitCmd() *cobra.Command {
 					printJSON(false, errStr, nil)
 				}
 				return fmt.Errorf("%s", errStr)
+			}
+
+			// Register submodules on remote backend server
+			localStatus, _ := gitutils.GetLocalStatus(cwd)
+			if localStatus != nil {
+				for _, sub := range localStatus.Submodules {
+					subRepoName, err := gitutils.GetMetaRepoName(filepath.Join(cwd, sub.Path))
+					if err == nil && subRepoName != "" && subRepoName != repoName {
+						subTrackPayload := map[string]interface{}{
+							"full_name":       subRepoName,
+							"allow_code_pull": allowCodePull,
+						}
+						if subTrackBytes, err := json.Marshal(subTrackPayload); err == nil {
+							if req, err := http.NewRequest(http.MethodPost, trackURL, bytes.NewReader(subTrackBytes)); err == nil {
+								req.Header.Set("Content-Type", "application/json")
+								if subResp, err := client.Do(req); err == nil {
+									subResp.Body.Close()
+								}
+							}
+						}
+					}
+				}
 			}
 
 			if !jsonOutput {
@@ -844,18 +1280,52 @@ func newInitCmd() *cobra.Command {
 			}
 
 			// 3. Register GitHub Webhooks
-			if !jsonOutput {
-				fmt.Println("\n3. Registering GitHub Webhooks (Parent + Submodules)...")
-			}
-			err = gitutils.RegisterGitHubWebhook(cwd, webhookURL, secret, "")
-			if err != nil {
-				if jsonOutput {
-					printJSON(false, fmt.Sprintf("Failed to register webhooks: %v", err), nil)
+			if appInstalledOnRepo {
+				if !jsonOutput {
+					fmt.Println("\n3. ✅ MetaStackr GitHub App is installed and has permission for this repository. Skipping manual webhook setup!")
 				}
-				return err
-			}
-			if !jsonOutput {
-				fmt.Println("  ✅ GitHub webhooks registered successfully.")
+			} else if skipWebhooks {
+				if !jsonOutput {
+					fmt.Println("\n3. Skipping per-repository GitHub Webhooks setup (--skip-webhooks flag set).")
+				}
+			} else {
+				if !jsonOutput {
+					fmt.Println("\n3. GitHub Webhook Setup:")
+					if appInstalledOnAccount {
+						fmt.Printf("   ⚠️ MetaStackr GitHub App is installed on your account, but does NOT have permission for repository '%s'.\n", repoName)
+						fmt.Printf("   👉 Grant permission to this repository: https://github.com/apps/metastackr\n\n")
+					} else {
+						fmt.Println("   ℹ️ MetaStackr GitHub App is not active for this repository.")
+						fmt.Printf("   👉 Install GitHub App (Recommended): https://github.com/apps/metastackr\n\n")
+					}
+
+					setupManual := false
+					if !jsonOutput {
+						fmt.Println("   Would you like to:")
+						fmt.Println("     [1] Install / grant repository access to the MetaStackr GitHub App (Recommended)")
+						fmt.Println("     [2] Set up repository webhooks manually now")
+						fmt.Print("   Enter choice [1/2] (default 1): ")
+
+						var input string
+						_, _ = fmt.Scanln(&input)
+						input = strings.TrimSpace(input)
+						if input == "2" {
+							setupManual = true
+						}
+					}
+
+					if setupManual {
+						fmt.Println("\n   Registering repository webhooks manually...")
+						err = gitutils.RegisterGitHubWebhook(cwd, webhookURL, secret, "")
+						if err != nil {
+							fmt.Printf("   ℹ️ Webhook registration note: %v\n", err)
+						} else {
+							fmt.Println("   ✅ GitHub webhooks registered successfully.")
+						}
+					} else {
+						fmt.Println("\n   ⏩ Skipped manual webhook setup. Once the GitHub App has access, PRs will sync automatically!")
+					}
+				}
 			}
 
 			// 4. Create/update AGENTS.md guidelines
@@ -872,6 +1342,8 @@ func newInitCmd() *cobra.Command {
 			if !jsonOutput {
 				fmt.Println("  ✅ AGENTS.md guidelines written successfully.")
 			}
+
+			_, _ = gitutils.ExecGit(cwd, "config", "metastackr.initialized", "true")
 
 			if !jsonOutput {
 				fmt.Printf("\n🎉 Onboarding Complete! MetaStackr is fully set up for this repository.\n")
@@ -897,6 +1369,7 @@ func newInitCmd() *cobra.Command {
 	cmd.Flags().StringVar(&webhookURL, "url", "https://api.metastac.kr/webhooks/github", "The webhook target URL")
 	cmd.Flags().StringVar(&secret, "secret", "", "Optional webhook signature verification secret key (defaults to server repo UUID)")
 	cmd.Flags().BoolVar(&allowCodePull, "allow-code-pull", false, "Opt-in to allow backend server to pull/clone repo code")
+	cmd.Flags().BoolVar(&skipWebhooks, "skip-webhooks", false, "Skip repository-level webhook creation (use when GitHub App is installed)")
 
 	return cmd
 }

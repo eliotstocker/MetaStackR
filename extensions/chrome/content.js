@@ -229,6 +229,15 @@
       </svg>MetaStackr<span aria-hidden="true" data-variant="secondary" data-component="CounterLabel" class="ml-2 prc-CounterLabel-CounterLabel-X-kRU Counter">${childPRs.length}</span>
     `;
 
+    let activeTabPollInterval = null;
+
+    function stopTabPolling() {
+      if (activeTabPollInterval) {
+        clearInterval(activeTabPollInterval);
+        activeTabPollInterval = null;
+      }
+    }
+
     subTab.addEventListener('click', (e) => {
       e.preventDefault();
       tabList.querySelectorAll('a').forEach(t => {
@@ -240,11 +249,45 @@
       subTab.classList.add('PullRequestHeaderTabNav-module__selected__g5kH0');
       subTab.setAttribute('aria-current', 'page');
 
-      showSubmodulesGrid(metaPR, childPRs);
+      showSubmodulesGrid(metaPR, metaPR ? metaPR.child_prs : [], repoFullName);
+
+      // Re-fetch latest PR status on tab click
+      const prMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
+      if (prMatch) {
+        const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name');
+        const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
+        fetchPRStatus(repoFullName, prNumber, branchName, (latestPR) => {
+          if (latestPR) {
+            metaPR = latestPR;
+            showSubmodulesGrid(latestPR, latestPR.child_prs, repoFullName);
+          }
+        });
+      }
+
+      // Auto-poll status every 3s while MetaStackr tab is active
+      stopTabPolling();
+      activeTabPollInterval = setInterval(() => {
+        if (!document.getElementById('metastackr-submodules-tab') || !subTab.classList.contains('selected')) {
+          stopTabPolling();
+          return;
+        }
+        const prMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
+        if (prMatch) {
+          const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name');
+          const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
+          fetchPRStatus(repoFullName, prNumber, branchName, (latestPR) => {
+            if (latestPR) {
+              metaPR = latestPR;
+              showSubmodulesGrid(latestPR, latestPR.child_prs, repoFullName);
+            }
+          });
+        }
+      }, 3000);
     });
 
     tabList.querySelectorAll('a:not(#metastackr-submodules-tab)').forEach(nativeTab => {
       nativeTab.addEventListener('click', () => {
+        stopTabPolling();
         cleanupMetaStackrPanel();
       });
     });
@@ -252,7 +295,11 @@
     tabList.appendChild(subTab);
   }
 
-  function showSubmodulesGrid(metaPR, childPRs) {
+  function showSubmodulesGrid(metaPR, childPRs, repoFullName) {
+    const targetRepo = (metaPR && metaPR.meta_repo_full_name) 
+      ? metaPR.meta_repo_full_name 
+      : (repoFullName || (window.location.pathname.match(/^\/([^\/]+\/[^\/]+)/) || [])[1]);
+
     let container = document.getElementById('metastackr-submodules-panel');
     if (!container) {
       container = document.createElement('div');
@@ -304,30 +351,158 @@
     });
 
     container.innerHTML = `
-      <div class="metastackr-panel-header">
-        <div class="metastackr-title-group">
-          <h2>
-            <svg aria-hidden="true" focusable="false" class="octicon octicon-zap" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" style="vertical-align: text-bottom; margin-right: 8px;">
-              <path d="M8.22 1.754a.75.75 0 0 0-1.44 0L4.537 7.033A.75.75 0 0 0 5.228 8.1h2.522l-1.97 6.142a.75.75 0 0 0 1.44 0l2.243-5.279A.75.75 0 0 0 8.772 7.9H6.25l1.97-6.146Z"></path>
-            </svg>Submodule Synchronization Matrix
-          </h2>
-          <span class="status-badge state-${(metaPR.status || 'open').toLowerCase()}">${metaPR.status || 'OPEN'}</span>
-          <span class="metastackr-lock-badge">Lock Version ${metaPR.lock_version || 1}</span>
+      <div class="metastackr-box">
+        <div class="metastackr-box-header">
+          <div class="metastackr-title-group">
+            <h3 class="metastackr-box-title">
+              <svg aria-hidden="true" focusable="false" class="octicon octicon-zap" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                <path d="M8.22 1.754a.75.75 0 0 0-1.44 0L4.537 7.033A.75.75 0 0 0 5.228 8.1h2.522l-1.97 6.142a.75.75 0 0 0 1.44 0l2.243-5.279A.75.75 0 0 0 8.772 7.9H6.25l1.97-6.146Z"></path>
+              </svg>
+              Submodule Synchronization Matrix
+            </h3>
+            <span class="status-badge state-${(metaPR.status || 'open').toLowerCase()}">${metaPR.status || 'OPEN'}</span>
+          </div>
+          <span class="metastackr-badge-muted">Lock Version ${metaPR.lock_version || 1}</span>
+        </div>
+        <div class="metastackr-grid">
+          <div class="metastackr-grid-header">
+            <div class="col-path">Submodule Path</div>
+            <div class="col-repo">Submodule Repo</div>
+            <div class="col-pr">PR #</div>
+            <div class="col-sha">Commit SHA</div>
+            <div class="col-status">Merge Status</div>
+          </div>
+          ${rowsHtml || '<div class="metastackr-empty">No child submodules tracked for this branch</div>'}
         </div>
       </div>
-      <div class="metastackr-grid">
-        <div class="metastackr-grid-header">
-          <div class="col-path">Submodule Path</div>
-          <div class="col-repo">Submodule Repo</div>
-          <div class="col-pr">PR #</div>
-          <div class="col-sha">Commit SHA</div>
-          <div class="col-status">Merge Status</div>
+
+      <details class="metastackr-settings-details">
+        <summary>
+          <svg aria-hidden="true" focusable="false" class="octicon octicon-gear" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"></path>
+          </svg>
+          <span>Auto-Merge Policy Rules</span>
+          <span class="caret"></span>
+        </summary>
+        <div class="metastackr-box metastackr-settings-card">
+          <div style="background: transparent; border-bottom: 1px solid var(--ms-border-default); padding-bottom: 8px; margin-bottom: 12px;">
+            <h3 class="metastackr-box-title">
+              Policy Rules Settings
+            </h3>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
+            <label class="metastackr-checkbox-label">
+              <input type="checkbox" id="metastackr-require-approval-chk" checked>
+              <span><strong>Require Root PR Approval</strong> — Root PR must have an <code>APPROVED</code> review before auto-merge</span>
+            </label>
+            <label class="metastackr-checkbox-label">
+              <input type="checkbox" id="metastackr-auto-merge-chk" checked>
+              <span><strong>Enable Auto Cascade Merge</strong> — Automatically trigger cascade merge when all policy rules pass</span>
+            </label>
+            <label class="metastackr-checkbox-label">
+              <input type="checkbox" id="metastackr-submodule-only-chk" checked>
+              <span><strong>Submodule Only Changes</strong> — Auto-merge only when changes are restricted to submodules (pause if root files are modified)</span>
+            </label>
+            <div class="metastackr-form-group" style="margin-top: 4px;">
+              <label for="metastackr-req-checks-input"><strong>Required Status Checks:</strong> <span style="font-weight: normal; opacity: 0.8;">(comma-separated check names, e.g. <code>ci/build, lint</code>)</span></label>
+              <input type="text" id="metastackr-req-checks-input" class="metastackr-form-control" value="" placeholder="e.g. ci/build, test" style="max-width: 450px;">
+            </div>
+            <div class="metastackr-form-group" style="margin-top: 4px;">
+              <label for="metastackr-merge-method-select"><strong>Default Merge Method:</strong></label>
+              <select id="metastackr-merge-method-select" class="metastackr-form-control" style="width: 160px;">
+                <option value="merge" selected>Merge (commit)</option>
+                <option value="squash">Squash</option>
+                <option value="rebase">Rebase</option>
+              </select>
+            </div>
+            <div style="margin-top: 8px; display: flex; align-items: center; gap: 12px;">
+              <button type="button" id="metastackr-save-settings-btn" class="btn btn-sm btn-primary">Save Policy Rules</button>
+              <span id="metastackr-settings-status" style="font-size: 12px; color: var(--ms-state-merged-fg, #1a7f37);"></span>
+            </div>
+          </div>
         </div>
-        ${rowsHtml || '<div class="metastackr-empty">No child submodules tracked for this branch</div>'}
-      </div>
+      </details>
     `;
 
     container.style.display = 'block';
+
+    if (targetRepo) {
+      // Async load saved settings from backend
+      fetch(`https://api.metastac.kr/api/v1/repos/settings?repo=${encodeURIComponent(targetRepo)}`)
+        .then(res => res.ok ? res.json() : null)
+        .catch(() => null)
+        .then(settings => {
+          if (settings) {
+            const chkApproval = document.getElementById('metastackr-require-approval-chk');
+            const chkAuto = document.getElementById('metastackr-auto-merge-chk');
+            const chkSubOnly = document.getElementById('metastackr-submodule-only-chk');
+            const inputChecks = document.getElementById('metastackr-req-checks-input');
+            const selectMethod = document.getElementById('metastackr-merge-method-select');
+
+            if (chkApproval) chkApproval.checked = settings.require_root_approval !== false;
+            if (chkAuto) chkAuto.checked = settings.auto_merge_enabled !== false;
+            if (chkSubOnly) chkSubOnly.checked = settings.submodule_changes_only !== false;
+            if (inputChecks) inputChecks.value = (settings.required_checks || []).join(', ');
+            if (selectMethod) selectMethod.value = settings.default_merge_method || 'merge';
+          }
+        });
+    }
+
+    const saveBtn = document.getElementById('metastackr-save-settings-btn');
+    if (saveBtn) {
+      saveBtn.onclick = function(e) {
+        if (e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        const reqApproval = document.getElementById('metastackr-require-approval-chk').checked;
+        const autoMerge = document.getElementById('metastackr-auto-merge-chk').checked;
+        const subOnly = document.getElementById('metastackr-submodule-only-chk').checked;
+        const checksRaw = document.getElementById('metastackr-req-checks-input').value;
+        const mergeMethod = document.getElementById('metastackr-merge-method-select').value;
+        const reqChecks = checksRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+        const statusEl = document.getElementById('metastackr-settings-status');
+        if (statusEl) {
+          statusEl.innerText = 'Saving...';
+          statusEl.style.color = 'var(--ms-fg-muted, #57606a)';
+        }
+
+        const activeRepo = targetRepo || (window.location.pathname.match(/^\/([^\/]+\/[^\/]+)/) || [])[1];
+
+        fetch('https://api.metastac.kr/api/v1/repos/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo: activeRepo,
+            require_root_approval: reqApproval,
+            auto_merge_enabled: autoMerge,
+            submodule_changes_only: subOnly,
+            required_checks: reqChecks,
+            default_merge_method: mergeMethod
+          })
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (statusEl) {
+            if (data && data.success) {
+              statusEl.innerText = '✅ Saved successfully!';
+              statusEl.style.color = 'var(--ms-state-merged-fg, #1a7f37)';
+              setTimeout(() => { statusEl.innerText = ''; }, 3000);
+            } else {
+              statusEl.innerText = '❌ Failed to save settings';
+              statusEl.style.color = 'var(--ms-state-failed-fg, #cf222e)';
+            }
+          }
+        })
+        .catch(err => {
+          if (statusEl) {
+            statusEl.innerText = `❌ Error: ${err.message}`;
+            statusEl.style.color = 'var(--ms-state-failed-fg, #cf222e)';
+          }
+        });
+      };
+    }
   }
 
   function injectParentSidebarCard(metaPR, repoFullName, prNumber) {
