@@ -301,19 +301,29 @@ func SyncUpstream(rootDir string) error {
 		return err
 	}
 
-	// 2. Sync submodules
+	// 2. Sync parent repo branch with origin
+	if status.MetaBranch != "" && status.MetaBranch != "HEAD" {
+		_, _ = ExecGit(rootDir, "pull", "--rebase", "origin", status.MetaBranch)
+	}
+
+	// 3. Sync submodules with origin
 	for _, sub := range status.Submodules {
 		subDir := rootDir + "/" + sub.Path
 		_, _ = ExecGit(subDir, "fetch", "origin")
-		// Fast-forward rebase local changes onto matching origin branch
-		if _, err := ExecGit(subDir, "rebase", "origin/main"); err != nil {
-			return fmt.Errorf("failed to rebase submodule %s: %w", sub.Path, err)
+		targetBranch := sub.Branch
+		if targetBranch == "" || targetBranch == "HEAD" {
+			targetBranch = "main"
 		}
+		_, _ = ExecGit(subDir, "pull", "--rebase", "origin", targetBranch)
 	}
 
-	// 3. Stage changes
-	if _, err := ExecGit(rootDir, "add", "--all"); err == nil {
-		_, _ = ExecGit(rootDir, "commit", "-m", "chore: sync submodule references")
+	// 4. Align submodule pointers in parent index
+	for _, sub := range status.Submodules {
+		subDir := rootDir + "/" + sub.Path
+		if commit, err := ExecGit(subDir, "rev-parse", "HEAD"); err == nil {
+			commit = strings.TrimSpace(commit)
+			_, _ = ExecGit(rootDir, "update-index", "--cacheinfo", "160000", commit, sub.Path)
+		}
 	}
 
 	return nil
@@ -413,7 +423,45 @@ func RegisterGitHubWebhook(rootDir, targetURL, secret, token string) error {
 					}
 				}
 				if isAlreadyExists {
-					fmt.Printf("  ℹ️ Webhook already registered for repository '%s'. Continuing...\n", name)
+					// Update existing webhook config via PATCH to ensure secret and URL match
+					listURL := fmt.Sprintf("https://api.github.com/repos/%s/hooks", name)
+					if listReq, err := http.NewRequest(http.MethodGet, listURL, nil); err == nil {
+						listReq.Header.Set("Authorization", "token "+token)
+						listReq.Header.Set("Accept", "application/vnd.github.v3+json")
+						if listResp, err := client.Do(listReq); err == nil {
+							var hooks []struct {
+								ID     int64 `json:"id"`
+								Config struct {
+									URL string `json:"url"`
+								} `json:"config"`
+							}
+							if json.NewDecoder(listResp.Body).Decode(&hooks) == nil {
+								for _, h := range hooks {
+									if h.Config.URL == targetURL || strings.Contains(h.Config.URL, "metastac.kr") {
+										patchURL := fmt.Sprintf("https://api.github.com/repos/%s/hooks/%d", name, h.ID)
+										patchPayload, _ := json.Marshal(map[string]interface{}{
+											"config": map[string]interface{}{
+												"url":          targetURL,
+												"content_type": "json",
+												"secret":       secret,
+												"insecure_ssl": "0",
+											},
+										})
+										if patchReq, err := http.NewRequest(http.MethodPatch, patchURL, bytes.NewReader(patchPayload)); err == nil {
+											patchReq.Header.Set("Authorization", "token "+token)
+											patchReq.Header.Set("Accept", "application/vnd.github.v3+json")
+											patchReq.Header.Set("Content-Type", "application/json")
+											if patchResp, err := client.Do(patchReq); err == nil {
+												patchResp.Body.Close()
+											}
+										}
+									}
+								}
+							}
+							listResp.Body.Close()
+						}
+					}
+					fmt.Printf("  ℹ️ Webhook updated for repository '%s'. Continuing...\n", name)
 					return nil
 				}
 			}
@@ -469,11 +517,12 @@ type PRResult struct {
 }
 
 type CreatePROptions struct {
-	BaseBranch string
-	Title      string
-	Body       string
-	Draft      bool
-	ForceWeb   bool
+	BaseBranch  string
+	Title       string
+	Body        string
+	MergeMethod string
+	Draft       bool
+	ForceWeb    bool
 }
 
 func OpenInBrowser(url string) error {
@@ -568,19 +617,6 @@ func CreatePRs(rootDir string, opts CreatePROptions) ([]PRResult, error) {
 		}
 
 		body := opts.Body
-		if body == "" && target.isMeta {
-			var sb strings.Builder
-			sb.WriteString("### ⚡ MetaStackr Submodule Matrix\n\n")
-			sb.WriteString("| Submodule Path | Branch | Status |\n")
-			sb.WriteString("| :--- | :--- | :--- |\n")
-			for _, sub := range status.Submodules {
-				if sub.Branch != "" && sub.Branch != baseBranch {
-					sb.WriteString(fmt.Sprintf("| `%s` | `%s` | ⏳ Pending Sync |\n", sub.Path, sub.Branch))
-				}
-			}
-			sb.WriteString("\n---\n*Orchestrated by [MetaStackr](https://github.com/eliotstocker/MetaStackr)*")
-			body = sb.String()
-		}
 
 		created := false
 		if !opts.ForceWeb {

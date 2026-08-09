@@ -22,6 +22,13 @@ function renderFeatures(md) {
     .join('\n')
 }
 
+function renderExtensions(md) {
+  const parts = md.trim().split(/\n---\n/)
+  const headerMd = parts[0]
+  const cards = parts.slice(1).map((block) => `    <div class="feature extension-card">\n${marked.parse(block.trim())}    </div>`).join('\n')
+  return `${marked.parse(headerMd.trim())}\n  <div class="features extension-grid">\n${cards}\n  </div>`
+}
+
 const template = fs.readFileSync(TEMPLATE_PATH, 'utf8')
 
 const output = template
@@ -29,6 +36,7 @@ const output = template
   .replace('{{DEMO_CAPTION}}', marked.parse(readMd('demo-caption.md')))
   .replace('{{GET_GOING}}', marked.parse(readMd('get-going.md')))
   .replace('{{FEATURES}}', renderFeatures(readMd('features.md')))
+  .replace('{{EXTENSIONS}}', renderExtensions(readMd('extensions.md')))
   .replace('{{AGENTS}}', marked.parse(readMd('agents.md')))
   .replace('{{CONFIG}}', marked.parse(readMd('config.md')))
 
@@ -40,6 +48,7 @@ const configDetailsOutput = template
   .replace(/\s*<section class="demo">[\s\S]*?<\/section>/, '')
   .replace(/\s*<section id="get-going" class="get-going">[\s\S]*?<\/section>/, '')
   .replace(/\s*<section id="features" class="features">[\s\S]*?<\/section>/, '')
+  .replace(/\s*<section id="extensions" class="extensions">[\s\S]*?<\/section>/, '')
   .replace(/\s*<section id="agents" class="agents">[\s\S]*?<\/section>/, '')
 
 fs.writeFileSync(CONFIG_DETAILS_PATH, configDetailsOutput)

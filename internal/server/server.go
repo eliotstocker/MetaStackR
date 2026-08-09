@@ -7,14 +7,16 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 	"metastackr/internal/db"
-	"strings"
+	"metastackr/internal/vcs"
 )
 
 type Server struct {
 	repo          *db.Repository
+	vcs           vcs.VCSProvider
 	gh            *GitHubClient
 	webhookSecret string
 	reconcileFn   func(ctx context.Context, metaPRID uuid.UUID) error
@@ -24,9 +26,20 @@ func NewServer(repo *db.Repository, gh *GitHubClient, webhookSecret string, reco
 	return &Server{
 		repo:          repo,
 		gh:            gh,
+		vcs:           gh,
 		webhookSecret: webhookSecret,
 		reconcileFn:   reconcileFn,
 	}
+}
+
+func (s *Server) VCS() vcs.VCSProvider {
+	if s.vcs != nil {
+		return s.vcs
+	}
+	if s.gh != nil {
+		return s.gh
+	}
+	return nil
 }
 
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {

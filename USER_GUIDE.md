@@ -205,6 +205,23 @@ git meta --version
 
 ---
 
+### `git meta completion`
+
+Generates shell autocompletion scripts for `git meta` and `git-meta` across `bash`, `zsh`, `fish`, and `powershell`.
+
+```bash
+# Zsh (add to ~/.zshrc):
+source <(git meta completion zsh)
+
+# Bash (add to ~/.bashrc):
+source <(git meta completion bash)
+
+# Fish (add to ~/.config/fish/config.fish):
+git meta completion fish | source
+```
+
+---
+
 ## Developer Workflow Scenario
 
 ### Step 1: Create a Feature Branch
