@@ -221,9 +221,53 @@ func GenerateMarkdownTable(metaPR *db.MetaPR) (title string, summary string, tex
 	return title, summary, sb.String()
 }
 
+// GetInstallationTokenForRepo resolves installation ID for a repo if zero, then fetches access token.
+func (c *GitHubClient) GetInstallationTokenForRepo(ctx context.Context, repoFullName string, installationID int64) (string, error) {
+	if installationID > 0 {
+		return c.GetInstallationToken(ctx, installationID)
+	}
+
+	if c.privateKey == nil {
+		return c.token, nil
+	}
+
+	jwtStr, err := generateJWT(c.appID, c.privateKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate GitHub App JWT: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/installation", c.baseURL, repoFullName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+jwtStr)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to query repo installation: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("repo installation API returned HTTP %d for %s: %s", resp.StatusCode, repoFullName, string(body))
+	}
+
+	var instResp struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&instResp); err != nil {
+		return "", err
+	}
+
+	return c.GetInstallationToken(ctx, instResp.ID)
+}
+
 // UpdateMetaCheckRun creates or updates the single GitHub Check Run named 'meta-repo/sync'.
 func (c *GitHubClient) UpdateMetaCheckRun(ctx context.Context, metaRepo string, headSHA string, metaPR *db.MetaPR, installationID int64) error {
-	token, err := c.GetInstallationToken(ctx, installationID)
+	token, err := c.GetInstallationTokenForRepo(ctx, metaRepo, installationID)
 	if err != nil {
 		return fmt.Errorf("failed to acquire token for check run: %w", err)
 	}
@@ -277,10 +321,48 @@ func (c *GitHubClient) UpdateMetaCheckRun(ctx context.Context, metaRepo string, 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("GitHub API returned HTTP %d for check run update on %s: %s", resp.StatusCode, metaRepo, string(body))
 	}
 
+	log.Printf("[checks] Successfully posted check run 'meta-repo/sync' (status: %s) for %s SHA %s", status, metaRepo, headSHA)
 	return nil
+}
+
+// GetPRHeadSHA fetches the head commit SHA for a pull request from GitHub API.
+func (c *GitHubClient) GetPRHeadSHA(ctx context.Context, repoFullName string, prNumber int, installationID int64) (string, error) {
+	token, err := c.GetInstallationTokenForRepo(ctx, repoFullName, installationID)
+	if err != nil {
+		return "", fmt.Errorf("failed to acquire token: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/pulls/%d", c.baseURL, repoFullName, prNumber)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("GitHub API returned HTTP %d for pull request %s#%d", resp.StatusCode, repoFullName, prNumber)
+	}
+
+	var prPayload struct {
+		Head struct {
+			SHA string `json:"sha"`
+		} `json:"head"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&prPayload); err != nil {
+		return "", err
+	}
+
+	return prPayload.Head.SHA, nil
 }

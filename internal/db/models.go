@@ -40,6 +40,7 @@ type MetaPR struct {
 	PRNumber    int       `json:"pr_number"`
 	BranchName  string    `json:"branch_name"`
 	BaseBranch  string    `json:"base_branch"`
+	HeadSHA     string    `json:"head_sha"`
 	Status      string    `json:"status"` // OPEN, MERGING, MERGED, FAILED_DRIFT, FAILED_PARTIAL
 	LockVersion int       `json:"lock_version"`
 	CreatedAt   time.Time `json:"created_at"`

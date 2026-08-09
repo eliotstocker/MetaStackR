@@ -82,6 +82,7 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !signatureVerified && !VerifySignature(s.webhookSecret, payload, sigHeader) {
+		log.Printf("[webhook] 401 Unauthorized: signature verification failed for repo payload (sigHeader: '%s')", sigHeader)
 		http.Error(w, "Invalid signature", http.StatusUnauthorized)
 		return
 	}
@@ -129,6 +130,12 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 	tracked, err := s.repo.GetTrackedRepoByFullName(ctx, evt.Repo)
 	if err == nil && tracked != nil {
 		metaPR, err := s.repo.GetMetaPRByRepoAndNumber(ctx, evt.Repo, evt.PRNumber)
+		if (err != nil || metaPR == nil) && evt.BranchName != "" {
+			metaPR, _ = s.repo.GetMetaPRByAnyBranch(ctx, evt.BranchName)
+		}
+		if (err != nil || metaPR == nil) && evt.MergedSHA != "" {
+			metaPR, _ = s.repo.GetMetaPRByHeadSHA(ctx, evt.MergedSHA)
+		}
 		if (err != nil || metaPR == nil) && evt.PRNumber > 0 {
 			metaPR = &db.MetaPR{
 				ID:          uuid.New(),
@@ -136,31 +143,38 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 				PRNumber:    evt.PRNumber,
 				BranchName:  evt.BranchName,
 				BaseBranch:  "main",
+				HeadSHA:     evt.MergedSHA,
 				Status:      "OPEN",
 				LockVersion: 1,
 			}
 			_ = s.repo.CreateMetaPR(ctx, metaPR)
 		}
 		if metaPR != nil {
+			if evt.MergedSHA != "" && metaPR.HeadSHA != evt.MergedSHA {
+				metaPR.HeadSHA = evt.MergedSHA
+				_ = s.repo.UpdateMetaPRHeadSHA(ctx, metaPR.ID, evt.MergedSHA)
+			}
+
 			if evt.EventType == EventTypePRMerged {
 				_ = s.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "MERGED", metaPR.LockVersion)
 			} else {
 				s.autoSynthesizeChildPRs(ctx, metaPR, evt)
-			}
-
-			headSHA := evt.MergedSHA
-			if headSHA == "" {
-				for _, child := range metaPR.ChildPRs {
-					if child.HeadSHA != "" {
-						headSHA = child.HeadSHA
-						break
-					}
+				if updatedChildren, err := s.repo.GetChildPRsByMetaPRID(ctx, metaPR.ID); err == nil {
+					metaPR.ChildPRs = updatedChildren
 				}
 			}
 
-			if headSHA != "" {
+			if metaPR.HeadSHA == "" && metaPR.PRNumber > 0 {
 				instID := getInstID(evt.InstallationID, tracked.InstallationID)
-				if err := s.gh.UpdateMetaCheckRun(ctx, tracked.RepoFullName, headSHA, metaPR, instID); err != nil {
+				if fetchedSHA, err := s.gh.GetPRHeadSHA(ctx, tracked.RepoFullName, metaPR.PRNumber, instID); err == nil && fetchedSHA != "" {
+					metaPR.HeadSHA = fetchedSHA
+					_ = s.repo.UpdateMetaPRHeadSHA(ctx, metaPR.ID, fetchedSHA)
+				}
+			}
+
+			if metaPR.HeadSHA != "" {
+				instID := getInstID(evt.InstallationID, tracked.InstallationID)
+				if err := s.gh.UpdateMetaCheckRun(ctx, tracked.RepoFullName, metaPR.HeadSHA, metaPR, instID); err != nil {
 					log.Printf("[checks] Error updating meta check run for %s: %v", tracked.RepoFullName, err)
 				}
 			}
@@ -185,7 +199,9 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 			}
 			_ = s.repo.UpsertChildPR(ctx, child)
 		}
-	} else if err == nil && child != nil {
+	}
+	
+	if child != nil {
 		if evt.Merged {
 			child.Status = "MERGED"
 		}
@@ -202,13 +218,15 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 		if err == nil && parentMeta != nil {
 			trackedMeta, err := s.repo.GetTrackedRepoByID(ctx, parentMeta.MetaRepoID)
 			if err == nil && trackedMeta != nil {
-				headSHA := evt.MergedSHA
-				if headSHA == "" {
-					headSHA = child.HeadSHA
+				instID := getInstID(evt.InstallationID, trackedMeta.InstallationID)
+				if parentMeta.HeadSHA == "" && parentMeta.PRNumber > 0 {
+					if fetchedSHA, err := s.gh.GetPRHeadSHA(ctx, trackedMeta.RepoFullName, parentMeta.PRNumber, instID); err == nil && fetchedSHA != "" {
+						parentMeta.HeadSHA = fetchedSHA
+						_ = s.repo.UpdateMetaPRHeadSHA(ctx, parentMeta.ID, fetchedSHA)
+					}
 				}
-				if headSHA != "" {
-					instID := getInstID(evt.InstallationID, trackedMeta.InstallationID)
-					if err := s.gh.UpdateMetaCheckRun(ctx, trackedMeta.RepoFullName, headSHA, parentMeta, instID); err != nil {
+				if parentMeta.HeadSHA != "" {
+					if err := s.gh.UpdateMetaCheckRun(ctx, trackedMeta.RepoFullName, parentMeta.HeadSHA, parentMeta, instID); err != nil {
 						log.Printf("[checks] Error updating meta check run for %s: %v", trackedMeta.RepoFullName, err)
 					}
 				}
