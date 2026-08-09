@@ -1,8 +1,9 @@
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'fetchPRStatus') {
-    const { repo, branch } = request;
+    const { repo, prNumber, branch } = request;
     const tryFetch = (serverURL, fallbackURL) => {
-      const url = `${serverURL}/api/v1/prs/status?repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(branch)}`;
+      const prParam = prNumber ? `&pr=${prNumber}` : '';
+      const url = `${serverURL}/api/v1/prs/status?repo=${encodeURIComponent(repo)}${prParam}&branch=${encodeURIComponent(branch)}`;
       fetch(url)
         .then(res => {
           if (!res.ok) throw new Error('Unreachable server');
