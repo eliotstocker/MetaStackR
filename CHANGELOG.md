@@ -1,3 +1,10 @@
+## [1.6.2](https://github.com/eliotstocker/MetaStackR/compare/v1.6.1...v1.6.2) (2026-08-09)
+
+
+### Bug Fixes
+
+* **server:** include HTTP 405 Method Not Allowed in MergePullRequest retry loop ([a52819a](https://github.com/eliotstocker/MetaStackR/commit/a52819a13e7955a08cbb47c81185f195b69053a7))
+
 ## [1.6.1](https://github.com/eliotstocker/MetaStackR/compare/v1.6.0...v1.6.1) (2026-08-08)
 
 
