@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>metastackr — meta-repo orchestration platform</title>
+<meta name="description" content="An event-driven meta-repo orchestration platform with custom git-meta CLI and PostgreSQL DAG cascade merge engine." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;400;500;700&display=swap" />
+<link rel="stylesheet" href="assets/style.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.css" />
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-inner">
+    <span class="wordmark">metastackr</span>
+    <nav>
+      <a href="https://github.com/apps/metastackr" target="_blank" rel="noopener">Install GitHub App</a>
+      <a href="#features">Features</a>
+      <a href="#config">Config</a>
+      <a href="#agents">Agents</a>
+      <a href="https://github.com/eliotstocker/MetaStackr">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <section class="hero">
+    <pre class="ascii-logo" aria-hidden="true">_  _ ____ ___ ____ ____ ___ ____ ____ _  _ ____
+|\/| |___  |  |__| [__   |  |__| |    |_/  |__/
+|  | |___  |  |  | ___]  |  |  | |___ | \_ |  \ </pre>
+{{HERO}}
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/apps/metastackr" target="_blank" rel="noopener">Install GitHub App</a>
+      <code class="install">curl -fsSL https://metastac.kr/install.sh | bash</code>
+      <a class="btn" href="https://github.com/eliotstocker/MetaStackr">View on GitHub</a>
+    </div>
+  </section>
+
+  <section class="demo">
+    <div id="demo-player"></div>
+    <div class="caption">
+{{DEMO_CAPTION}}
+    </div>
+  </section>
+
+  <section id="get-going" class="get-going">
+{{GET_GOING}}
+  </section>
+
+  <section id="features" class="features">
+{{FEATURES}}
+  </section>
+
+  <section id="agents" class="agents">
+{{AGENTS}}
+  </section>
+
+  <section id="config" class="config">
+{{CONFIG}}
+  </section>
+
+</main>
+
+<footer>
+  <p>MIT licensed. <a href="https://github.com/eliotstocker/MetaStackr">github.com/eliotstocker/MetaStackr</a></p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.min.js"></script>
+<script>
+  AsciinemaPlayer.create('assets/demo.cast', document.getElementById('demo-player'), {
+    autoPlay: true,
+    loop: true,
+    controls: false,
+    fit: 'width'
+  });
+</script>
+</body>
+</html>

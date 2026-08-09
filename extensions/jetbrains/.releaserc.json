@@ -1,0 +1,62 @@
+{
+  "branches": ["main"],
+  "tagFormat": "jetbrains-v${version}",
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "angular",
+        "releaseRules": [
+          { "scope": "core", "release": false },
+          { "scope": "cli", "release": false },
+          { "scope": "daemon", "release": false },
+          { "scope": "vscode", "release": false },
+          { "scope": "chrome", "release": false },
+          { "scope": "web", "release": false },
+          { "scope": "jetbrains", "type": "feat", "release": "minor" },
+          { "scope": "jetbrains", "type": "fix", "release": "patch" },
+          { "scope": "jetbrains", "type": "perf", "release": "patch" },
+          { "scope": "jetbrains", "type": "refactor", "release": "patch" },
+          { "scope": "jetbrains", "breaking": true, "release": "major" },
+          { "scope": "jetbrains", "release": "patch" }
+        ]
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "angular"
+      }
+    ],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "extensions/jetbrains/CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "node -e 'const fs=require(\"fs\"); const p=\"extensions/jetbrains/build.gradle.kts\"; let content=fs.readFileSync(p,\"utf8\"); content=content.replace(/version\\s*=\\s*\"[^\"]+\"/, \"version = \\\"${nextRelease.version}\\\"\"); fs.writeFileSync(p, content);' && cd extensions/jetbrains && (./gradlew buildPlugin 2>/dev/null || gradle buildPlugin)"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "extensions/jetbrains/build.gradle.kts",
+          "extensions/jetbrains/CHANGELOG.md"
+        ],
+        "message": "chore(release): jetbrains plugin v${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          { "path": "extensions/jetbrains/build/distributions/*.zip", "label": "MetaStackr JetBrains Plugin (.zip)" }
+        ]
+      }
+    ]
+  ]
+}

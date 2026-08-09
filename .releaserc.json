@@ -1,0 +1,69 @@
+{
+  "branches": ["main"],
+  "tagFormat": "v${version}",
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "angular",
+        "releaseRules": [
+          { "scope": "vscode", "release": false },
+          { "scope": "chrome", "release": false },
+          { "scope": "jetbrains", "release": false },
+          { "scope": "web", "release": false },
+          { "scope": "core", "type": "feat", "release": "minor" },
+          { "scope": "core", "type": "fix", "release": "patch" },
+          { "scope": "core", "type": "perf", "release": "patch" },
+          { "scope": "core", "type": "refactor", "release": "patch" },
+          { "scope": "core", "breaking": true, "release": "major" },
+          { "scope": "cli", "type": "feat", "release": "minor" },
+          { "scope": "cli", "type": "fix", "release": "patch" },
+          { "scope": "daemon", "type": "feat", "release": "minor" },
+          { "scope": "daemon", "type": "fix", "release": "patch" }
+        ]
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "angular"
+      }
+    ],
+    [
+      "@semantic-release/changelog",
+      {
+        "changelogFile": "CHANGELOG.md"
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "make build-release VERSION=v${nextRelease.version}"
+      }
+    ],
+    [
+      "@semantic-release/git",
+      {
+        "assets": ["CHANGELOG.md"],
+        "message": "chore(release): core v${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          { "path": "git-meta", "label": "git-meta CLI binary (default)" },
+          { "path": "git-meta-darwin-arm64", "label": "git-meta macOS ARM64 (Apple Silicon)" },
+          { "path": "git-meta-darwin-amd64", "label": "git-meta macOS Intel" },
+          { "path": "git-meta-linux-amd64", "label": "git-meta Linux x86_64" },
+          { "path": "git-meta-linux-arm64", "label": "git-meta Linux ARM64" },
+          { "path": "metastackrd", "label": "metastackrd backend daemon binary" },
+          { "path": "metastackrd-darwin-arm64", "label": "metastackrd macOS ARM64" },
+          { "path": "metastackrd-darwin-amd64", "label": "metastackrd macOS Intel" },
+          { "path": "metastackrd-linux-amd64", "label": "metastackrd Linux x86_64" },
+          { "path": "metastackrd-linux-arm64", "label": "metastackrd Linux ARM64" }
+        ]
+      }
+    ]
+  ]
+}

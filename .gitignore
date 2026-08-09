@@ -1,0 +1,28 @@
+# Binaries
+/git-meta
+/git-meta-*
+/metastackrd
+/metastackrd-*
+/bootstrap
+dist/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+bootstrap.zip
+
+# Node dependencies
+node_modules/
+
+# Built packages & zips
+metastackr-chrome.zip
+metastackr-vscode.vsix
+extensions/jetbrains/build/
+extensions/jetbrains/.gradle/
+
+# IDEs and local files
+.DS_Store
+.idea/
+.vscode/
+*.log

@@ -1,0 +1,2 @@
+<p><code>git meta status</code> queries both local submodule drift and live remote statuses, then executes bottom-up pushes, and triggers a Saga cascade merge topologically on the backend daemon.</p>
+<p>Check out the <a href="https://github.com/eliotstocker/MetaStackr">MetaStackr repository</a> to get started.</p>
