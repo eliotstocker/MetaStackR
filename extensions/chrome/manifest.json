@@ -8,12 +8,15 @@
   ],
   "host_permissions": [
     "https://api.metastac.kr/*",
-    "http://localhost:8080/*"
+    "http://localhost:8080/*",
+    "https://gitlab.com/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "https://github.com/*/*/pull/*"
+        "https://github.com/*/*/pull/*",
+        "https://gitlab.com/*/*/merge_requests/*",
+        "https://gitlab.com/*/*/-/merge_requests/*"
       ],
       "js": [
         "content.js"

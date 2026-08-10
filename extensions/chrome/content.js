@@ -13,10 +13,22 @@
     document.addEventListener('DOMContentLoaded', initialize);
   }
 
-  // Observe DOM changes to re-inject component if GitHub dynamic navigation wipes it out
+  function getPRInfoFromURL() {
+    const ghMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
+    if (ghMatch) {
+      return { owner: ghMatch[1], repo: ghMatch[2], prNumber: parseInt(ghMatch[3], 10), repoFullName: `${ghMatch[1]}/${ghMatch[2]}` };
+    }
+    const glMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/(?:-\/)?merge_requests\/(\d+)/);
+    if (glMatch) {
+      return { owner: glMatch[1], repo: glMatch[2], prNumber: parseInt(glMatch[3], 10), repoFullName: `${glMatch[1]}/${glMatch[2]}` };
+    }
+    return null;
+  }
+
+  // Observe DOM changes to re-inject component if dynamic navigation wipes it out
   const observer = new MutationObserver(() => {
-    const prMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
-    if (prMatch) {
+    const prInfo = getPRInfoFromURL();
+    if (prInfo) {
       if (!document.getElementById('metastackr-submodules-tab') && !document.getElementById('metastackr-child-pr-banner')) {
         initialize();
       }
@@ -28,13 +40,13 @@
   }
 
   function initialize() {
-    const prMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
-    if (!prMatch) return;
+    const prInfo = getPRInfoFromURL();
+    if (!prInfo) return;
 
-    const owner = prMatch[1];
-    const repo = prMatch[2];
-    const prNumber = parseInt(prMatch[3], 10);
-    const repoFullName = `${owner}/${repo}`;
+    const owner = prInfo.owner;
+    const repo = prInfo.repo;
+    const prNumber = prInfo.prNumber;
+    const repoFullName = prInfo.repoFullName;
 
     // Get current branch from the GitHub DOM if possible
     const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name');

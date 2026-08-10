@@ -34,6 +34,9 @@ type TrackedMetaRepo struct {
 	RequireRootApproval  bool      `json:"require_root_approval"`
 	AutoMergeEnabled     bool      `json:"auto_merge_enabled"`
 	SubmoduleChangesOnly bool      `json:"submodule_changes_only"`
+	VCSProvider          string    `json:"vcs_provider"`
+	GitLabProjectID      int64     `json:"gitlab_project_id"`
+	VCSToken             string    `json:"vcs_token,omitempty"`
 	RequiredChecks       []string  `json:"required_checks"`
 	DefaultMergeMethod   string    `json:"default_merge_method"`
 	CreatedAt            time.Time `json:"created_at"`

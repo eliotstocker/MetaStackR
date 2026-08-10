@@ -77,14 +77,23 @@ source <(git meta completion zsh)
 source <(git meta completion bash)
 ```
 
-### 2. Run Backend Daemon (`metastackrd`)
+### 2. Connect Your VCS Provider (GitHub / GitLab)
 
-Set your database and GitHub credentials:
+MetaStackr natively supports both **GitHub** and **GitLab**:
+
+- **GitHub App**: Install the official [MetaStackr GitHub App](https://github.com/apps/metastackr) for zero-config repository webhook & status check orchestration.
+- **GitLab Integration**: Connect your organization via [MetaStackr GitLab OAuth](https://gitlab.com/oauth/authorize?client_id=81a2a92df4cbfc8d514aa59e1a3a8b33dcbd235a9431508f33bcbb5120ceaa58&redirect_uri=https://api.metastac.kr/oauth/gitlab/callback&response_type=code&scope=api+read_repository+write_repository) or supply a Group Access Token (`git meta config vcs-token glpat-xxxx`).
+
+### 3. Run Backend Daemon (`metastackrd`)
+
+Set your database and credentials:
 
 ```bash
 export DATABASE_URL="postgres://postgres:postgres@localhost:5432/metastackr?sslmode=disable"
-export WEBHOOK_SECRET="your-github-webhook-secret"
+export WEBHOOK_SECRET="your-webhook-secret"
 export GH_TOKEN="ghp_your_github_token"
+export GITLAB_CLIENT_ID="your_gitlab_client_id"
+export GITLAB_CLIENT_SECRET="your_gitlab_client_secret"
 
 ./metastackrd
 ```

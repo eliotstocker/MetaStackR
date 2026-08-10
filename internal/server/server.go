@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -42,6 +43,17 @@ func (s *Server) VCS() vcs.VCSProvider {
 	return nil
 }
 
+func (s *Server) VCSForRepo(ctx context.Context, repoFullName string) vcs.VCSProvider {
+	if s.repo != nil && repoFullName != "" {
+		if tracked, err := s.repo.GetTrackedRepoByFullName(ctx, repoFullName); err == nil && tracked != nil {
+			if tracked.VCSProvider == "gitlab" {
+				return NewGitLabClient("", tracked.VCSToken)
+			}
+		}
+	}
+	return s.VCS()
+}
+
 func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	handleWithCORS := func(pattern string, handler http.HandlerFunc) {
 		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +70,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 
 	handleWithCORS("POST /webhooks/github", s.handleGitHubWebhook)
 	handleWithCORS("OPTIONS /webhooks/github", func(w http.ResponseWriter, r *http.Request) {})
+	handleWithCORS("POST /webhooks/gitlab", s.handleGitLabWebhook)
+	handleWithCORS("OPTIONS /webhooks/gitlab", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("GET /api/v1/prs/status", s.handlePRStatusQuery)
 	handleWithCORS("OPTIONS /api/v1/prs/status", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("POST /api/v1/prs/retry-merge", s.handleRetryMerge)
@@ -134,11 +148,41 @@ func (s *Server) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[webhook] received %s for repo %s PR #%d (branch: %s)", event.EventType, event.Repo, event.PRNumber, event.BranchName)
 
-	ctx := r.Context()
-
-	if err := s.processNormalizedEvent(ctx, event); err != nil {
+	if err := s.processNormalizedEvent(r.Context(), event); err != nil {
 		log.Printf("[webhook] error processing event: %v", err)
-		http.Error(w, "Error processing event", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"accepted"}`))
+}
+
+func (s *Server) handleGitLabWebhook(w http.ResponseWriter, r *http.Request) {
+	tokenHeader := r.Header.Get("X-Gitlab-Token")
+	eventTypeHeader := r.Header.Get("X-Gitlab-Event")
+
+	payload, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read body", http.StatusBadRequest)
+		return
+	}
+
+	if s.webhookSecret != "" && tokenHeader != "" && tokenHeader != s.webhookSecret {
+		http.Error(w, "Invalid secret token", http.StatusUnauthorized)
+		return
+	}
+
+	event, err := ParseGitLabWebhook(eventTypeHeader, payload)
+	if err != nil {
+		log.Printf("[gitlab-webhook] unparseable event: %v", err)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if err := s.processNormalizedEvent(r.Context(), event); err != nil {
+		log.Printf("[gitlab-webhook] error processing event: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -613,6 +657,8 @@ type RepoSettingsRequest struct {
 	RequireRootApproval  bool     `json:"require_root_approval"`
 	AutoMergeEnabled     bool     `json:"auto_merge_enabled"`
 	SubmoduleChangesOnly bool     `json:"submodule_changes_only"`
+	VCSToken             string   `json:"vcs_token"`
+	VCSProvider          string   `json:"vcs_provider"`
 	RequiredChecks       []string `json:"required_checks"`
 	DefaultMergeMethod   string   `json:"default_merge_method"`
 }
@@ -656,7 +702,7 @@ func (s *Server) handleUpdateRepoSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	err := s.repo.UpdateTrackedRepoSettings(r.Context(), req.RepoFullName, req.RequireRootApproval, req.AutoMergeEnabled, req.RequiredChecks, req.DefaultMergeMethod, req.SubmoduleChangesOnly)
+	err := s.repo.UpdateTrackedRepoSettings(r.Context(), req.RepoFullName, req.RequireRootApproval, req.AutoMergeEnabled, req.RequiredChecks, req.DefaultMergeMethod, req.SubmoduleChangesOnly, req.VCSToken, req.VCSProvider)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to update settings: %v", err), http.StatusInternalServerError)
 		return

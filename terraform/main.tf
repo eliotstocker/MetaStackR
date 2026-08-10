@@ -100,8 +100,10 @@ resource "aws_lambda_function" "backend" {
       SQS_QUEUE_URL      = aws_sqs_queue.queue.id
       GITHUB_APP_ID      = var.github_app_id
       GITHUB_PRIVATE_KEY = var.github_private_key
-      WEBHOOK_SECRET     = var.webhook_secret
-      GH_TOKEN           = var.gh_token
+      WEBHOOK_SECRET       = var.webhook_secret
+      GH_TOKEN             = var.gh_token
+      GITLAB_CLIENT_ID     = var.gitlab_client_id
+      GITLAB_CLIENT_SECRET = var.gitlab_client_secret
     }
   }
 }

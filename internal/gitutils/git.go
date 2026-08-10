@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -28,6 +29,31 @@ type MetaLocalStatus struct {
 	HasUncommitted    bool              `json:"has_uncommitted"`
 	UnpushedCommits   int               `json:"unpushed_commits"`
 	Submodules        []SubmoduleStatus `json:"submodules"`
+}
+
+func DetectVCSProvider(dir string, remoteURL string) string {
+	if dir != "" {
+		if cfgVal, err := ExecGit(dir, "config", "--get", "metastackr.vcs-provider"); err == nil && strings.TrimSpace(cfgVal) != "" {
+			p := strings.ToLower(strings.TrimSpace(cfgVal))
+			if p == "github" || p == "gitlab" {
+				return p
+			}
+		}
+		if cfgVal, err := ExecGit(dir, "config", "--get", "metastackr.vcs"); err == nil && strings.TrimSpace(cfgVal) != "" {
+			p := strings.ToLower(strings.TrimSpace(cfgVal))
+			if p == "github" || p == "gitlab" {
+				return p
+			}
+		}
+	}
+	remoteURL = strings.ToLower(remoteURL)
+	if strings.Contains(remoteURL, "gitlab") {
+		return "gitlab"
+	}
+	if strings.Contains(remoteURL, "github") {
+		return "github"
+	}
+	return "unknown"
 }
 
 func ExecGit(dir string, args ...string) (string, error) {
@@ -538,6 +564,19 @@ func OpenInBrowser(url string) error {
 	return cmd.Run()
 }
 
+func CheckCLITools(vcsType string) (installed bool, toolName string, installInstructions string) {
+	if vcsType == "gitlab" {
+		if _, err := exec.LookPath("glab"); err == nil {
+			return true, "glab", ""
+		}
+		return false, "glab", "install via 'brew install glab' or visit https://gitlab.com/gitlab-org/cli"
+	}
+	if _, err := exec.LookPath("gh"); err == nil {
+		return true, "gh", ""
+	}
+	return false, "gh", "install via 'brew install gh' or visit https://cli.github.com"
+}
+
 func CreatePRs(rootDir string, opts CreatePROptions) ([]PRResult, error) {
 	status, err := GetLocalStatus(rootDir)
 	if err != nil {
@@ -606,7 +645,29 @@ func CreatePRs(rootDir string, opts CreatePROptions) ([]PRResult, error) {
 			}
 		}
 
+		remoteURL, _ := ExecGit(dir, "remote", "get-url", "origin")
+		vcsType := DetectVCSProvider(dir, remoteURL)
+
+		if vcsType == "unknown" {
+			errMsg := fmt.Sprintf("unsupported VCS provider for remote origin '%s' (MetaStackr currently supports GitHub and GitLab)", remoteURL)
+			if strings.TrimSpace(remoteURL) == "" {
+				errMsg = "no remote origin URL found to detect VCS provider (MetaStackr currently supports GitHub and GitLab)"
+			}
+			res := PRResult{
+				RepoPath:   target.path,
+				RepoName:   repoName,
+				HeadBranch: target.branch,
+				BaseBranch: baseBranch,
+				Error:      errMsg,
+			}
+			results = append(results, res)
+			continue
+		}
+
 		compareURL := fmt.Sprintf("https://github.com/%s/compare/%s...%s?expand=1", repoName, baseBranch, target.branch)
+		if vcsType == "gitlab" {
+			compareURL = fmt.Sprintf("https://gitlab.com/%s/-/merge_requests/new?merge_request[source_branch]=%s&merge_request[target_branch]=%s", repoName, target.branch, baseBranch)
+		}
 
 		res := PRResult{
 			RepoPath:   target.path,
@@ -620,24 +681,74 @@ func CreatePRs(rootDir string, opts CreatePROptions) ([]PRResult, error) {
 
 		created := false
 		if !opts.ForceWeb {
-			// 1. Try gh CLI
-			ghArgs := []string{"pr", "create", "--repo", repoName, "--base", baseBranch, "--head", target.branch, "--title", title, "--body", body}
-			if opts.Draft {
-				ghArgs = append(ghArgs, "--draft")
-			}
+			if vcsType == "gitlab" {
+				// 1. Try glab CLI
+				glArgs := []string{"mr", "create", "--repo", repoName, "--target-branch", baseBranch, "--source-branch", target.branch, "--title", title, "--description", body, "--yes"}
+				glCmd := exec.Command("glab", glArgs...)
+				glCmd.Dir = dir
+				var glOut bytes.Buffer
+				glCmd.Stdout = &glOut
 
-			ghCmd := exec.Command("gh", ghArgs...)
-			ghCmd.Dir = dir
-			var ghOut, ghErrOut bytes.Buffer
-			ghCmd.Stdout = &ghOut
-			ghCmd.Stderr = &ghErrOut
+				if err := glCmd.Run(); err == nil {
+					mrURL := strings.TrimSpace(glOut.String())
+					if mrURL != "" {
+						res.URL = mrURL
+						res.Created = true
+						created = true
+					}
+				}
 
-			if err := ghCmd.Run(); err == nil {
-				prURL := strings.TrimSpace(ghOut.String())
-				if prURL != "" {
-					res.URL = prURL
-					res.Created = true
-					created = true
+				// 2. Fallback: GitLab REST API with GITLAB_TOKEN
+				if !created && os.Getenv("GITLAB_TOKEN") != "" {
+					glToken := os.Getenv("GITLAB_TOKEN")
+					apiURL := fmt.Sprintf("https://gitlab.com/api/v4/projects/%s/merge_requests", url.PathEscape(repoName))
+					mrPayload := map[string]interface{}{
+						"source_branch": target.branch,
+						"target_branch": baseBranch,
+						"title":         title,
+						"description":   body,
+					}
+					jsonBytes, _ := json.Marshal(mrPayload)
+					req, err := http.NewRequest("POST", apiURL, bytes.NewReader(jsonBytes))
+					if err == nil {
+						req.Header.Set("PRIVATE-TOKEN", glToken)
+						req.Header.Set("Content-Type", "application/json")
+						client := &http.Client{Timeout: 10 * time.Second}
+						if resp, err := client.Do(req); err == nil {
+							if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
+								var mrRes struct {
+									WebURL string `json:"web_url"`
+								}
+								if err := json.NewDecoder(resp.Body).Decode(&mrRes); err == nil && mrRes.WebURL != "" {
+									res.URL = mrRes.WebURL
+									res.Created = true
+									created = true
+								}
+							}
+							resp.Body.Close()
+						}
+					}
+				}
+			} else {
+				// 1. Try gh CLI
+				ghArgs := []string{"pr", "create", "--repo", repoName, "--base", baseBranch, "--head", target.branch, "--title", title, "--body", body}
+				if opts.Draft {
+					ghArgs = append(ghArgs, "--draft")
+				}
+
+				ghCmd := exec.Command("gh", ghArgs...)
+				ghCmd.Dir = dir
+				var ghOut, ghErrOut bytes.Buffer
+				ghCmd.Stdout = &ghOut
+				ghCmd.Stderr = &ghErrOut
+
+				if err := ghCmd.Run(); err == nil {
+					prURL := strings.TrimSpace(ghOut.String())
+					if prURL != "" {
+						res.URL = prURL
+						res.Created = true
+						created = true
+					}
 				}
 			}
 
@@ -684,6 +795,9 @@ func CreatePRs(rootDir string, opts CreatePROptions) ([]PRResult, error) {
 
 		// 3. Fallback to opening compare URL in browser if not created
 		if !created && res.Error == "" {
+			if installed, tool, instructions := CheckCLITools(vcsType); !installed {
+				fmt.Fprintf(os.Stderr, "  ℹ️ '%s' CLI tool is not installed (%s). Opening browser fallback...\n", tool, instructions)
+			}
 			_ = OpenInBrowser(compareURL)
 			res.OpenedWeb = true
 		}

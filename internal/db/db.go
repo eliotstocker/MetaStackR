@@ -42,6 +42,9 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 	}
 
 	_, _ = db.ExecContext(ctx, "ALTER TABLE tracked_meta_repos ADD COLUMN IF NOT EXISTS submodule_changes_only BOOLEAN NOT NULL DEFAULT TRUE")
+	_, _ = db.ExecContext(ctx, "ALTER TABLE tracked_meta_repos ADD COLUMN IF NOT EXISTS vcs_provider VARCHAR(50) NOT NULL DEFAULT 'github'")
+	_, _ = db.ExecContext(ctx, "ALTER TABLE tracked_meta_repos ADD COLUMN IF NOT EXISTS gitlab_project_id BIGINT DEFAULT 0")
+	_, _ = db.ExecContext(ctx, "ALTER TABLE tracked_meta_repos ADD COLUMN IF NOT EXISTS vcs_token VARCHAR(512) DEFAULT ''")
 
 	return nil
 }

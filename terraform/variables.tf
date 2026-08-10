@@ -36,3 +36,16 @@ variable "webhook_secret" {
   default     = ""
   sensitive   = true
 }
+
+variable "gitlab_client_id" {
+  type        = string
+  description = "GitLab OAuth Application Client ID."
+  default     = ""
+}
+
+variable "gitlab_client_secret" {
+  type        = string
+  description = "GitLab OAuth Application Client Secret."
+  default     = ""
+  sensitive   = true
+}

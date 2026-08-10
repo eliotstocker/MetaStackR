@@ -49,5 +49,5 @@ jobs:
         working-directory: terraform
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve -var="database_url=${{ secrets.DATABASE_URL }}" -var="github_app_id=${{ secrets.APP_ID }}" -var="github_private_key=${{ secrets.APP_PRIVATE_KEY }}" -var="webhook_secret=${{ secrets.WEBHOOK_SECRET }}"
+        run: terraform apply -auto-approve -var="database_url=${{ secrets.DATABASE_URL }}" -var="github_app_id=${{ secrets.APP_ID }}" -var="github_private_key=${{ secrets.APP_PRIVATE_KEY }}" -var="webhook_secret=${{ secrets.WEBHOOK_SECRET }}" -var="gitlab_client_id=${{ secrets.GITLAB_CLIENT_ID }}" -var="gitlab_client_secret=${{ secrets.GITLAB_CLIENT_SECRET }}"
         working-directory: terraform
