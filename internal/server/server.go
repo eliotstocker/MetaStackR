@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -14,6 +16,7 @@ import (
 	"metastackr/internal/db"
 	"metastackr/internal/vcs"
 )
+
 
 type Server struct {
 	repo          *db.Repository
@@ -72,6 +75,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	handleWithCORS("OPTIONS /webhooks/github", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("POST /webhooks/gitlab", s.handleGitLabWebhook)
 	handleWithCORS("OPTIONS /webhooks/gitlab", func(w http.ResponseWriter, r *http.Request) {})
+	handleWithCORS("GET /oauth/gitlab/callback", s.handleGitLabOAuthCallback)
+	handleWithCORS("OPTIONS /oauth/gitlab/callback", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("GET /api/v1/prs/status", s.handlePRStatusQuery)
 	handleWithCORS("OPTIONS /api/v1/prs/status", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("POST /api/v1/prs/retry-merge", s.handleRetryMerge)
@@ -725,4 +730,169 @@ func (s *Server) handleUpdateRepoSettings(w http.ResponseWriter, r *http.Request
 		"settings": tracked,
 	})
 }
+
+func (s *Server) handleGitLabOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	code := r.URL.Query().Get("code")
+	errParam := r.URL.Query().Get("error")
+	errDesc := r.URL.Query().Get("error_description")
+
+	if errParam != "" {
+		http.Error(w, fmt.Sprintf("GitLab OAuth error: %s - %s", errParam, errDesc), http.StatusBadRequest)
+		return
+	}
+
+	if code == "" {
+		http.Error(w, "Missing 'code' parameter in authorization callback", http.StatusBadRequest)
+		return
+	}
+
+	clientID := os.Getenv("GITLAB_CLIENT_ID")
+	clientSecret := os.Getenv("GITLAB_CLIENT_SECRET")
+	redirectURI := os.Getenv("GITLAB_REDIRECT_URI")
+	if redirectURI == "" {
+		redirectURI = "https://api.metastac.kr/oauth/gitlab/callback"
+	}
+
+	if clientID == "" || clientSecret == "" {
+		http.Error(w, "GitLab OAuth credentials (GITLAB_CLIENT_ID / GITLAB_CLIENT_SECRET) not configured on server", http.StatusInternalServerError)
+		return
+	}
+
+	// 1. Exchange authorization code for token
+	tokenURL := "https://gitlab.com/oauth/token"
+	form := url.Values{}
+	form.Set("client_id", clientID)
+	form.Set("client_secret", clientSecret)
+	form.Set("code", code)
+	form.Set("grant_type", "authorization_code")
+	form.Set("redirect_uri", redirectURI)
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to create token request: %v", err), http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to contact GitLab OAuth token endpoint: %v", err), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "Failed to read response from GitLab token endpoint", http.StatusInternalServerError)
+		return
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, fmt.Sprintf("GitLab OAuth token exchange failed (HTTP %d): %s", resp.StatusCode, string(bodyBytes)), http.StatusBadRequest)
+		return
+	}
+
+	var tokenData struct {
+		AccessToken  string `json:"access_token"`
+		TokenType    string `json:"token_type"`
+		RefreshToken string `json:"refresh_token"`
+		Scope        string `json:"scope"`
+		CreatedAt    int64  `json:"created_at"`
+	}
+	if err := json.Unmarshal(bodyBytes, &tokenData); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse token response: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// 2. Fetch authenticated user profile from GitLab
+	var glUser struct {
+		ID       int64  `json:"id"`
+		Username string `json:"username"`
+		Name     string `json:"name"`
+		Email    string `json:"email"`
+		Avatar   string `json:"avatar_url"`
+	}
+	userReq, userErr := http.NewRequestWithContext(r.Context(), http.MethodGet, "https://gitlab.com/api/v4/user", nil)
+	if userErr == nil {
+		userReq.Header.Set("Authorization", "Bearer "+tokenData.AccessToken)
+		userReq.Header.Set("Accept", "application/json")
+		if userResp, err := http.DefaultClient.Do(userReq); err == nil {
+			defer userResp.Body.Close()
+			userBytes, _ := io.ReadAll(userResp.Body)
+			_ = json.Unmarshal(userBytes, &glUser)
+		}
+	}
+
+	// 3. Return JSON or HTML confirmation page
+	if strings.Contains(r.Header.Get("Accept"), "application/json") || r.URL.Query().Get("json") == "true" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":      true,
+			"access_token": tokenData.AccessToken,
+			"scope":        tokenData.Scope,
+			"user":         glUser,
+		})
+		return
+	}
+
+	displayName := glUser.Name
+	if displayName == "" {
+		displayName = glUser.Username
+	}
+	if displayName == "" {
+		displayName = "GitLab User"
+	}
+
+	usernameDisplay := glUser.Username
+	if usernameDisplay == "" {
+		usernameDisplay = "user"
+	}
+
+	avatarHTML := ""
+	if glUser.Avatar != "" {
+		avatarHTML = fmt.Sprintf(`<img src="%s" class="avatar" alt="Avatar">`, template.HTMLEscapeString(glUser.Avatar))
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitLab Connected - MetaStackR</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0d1117; color: #c9d1d9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 40px; max-width: 500px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    h1 { color: #58a6ff; font-size: 24px; margin-top: 0; }
+    .avatar { width: 64px; height: 64px; border-radius: 50%%; border: 2px solid #fc6d26; margin-bottom: 16px; }
+    .token-box { background: #0d1117; border: 1px dashed #30363d; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 13px; color: #79c0ff; word-break: break-all; margin: 20px 0; text-align: left; }
+    .btn { display: inline-block; background: #238636; color: #fff; text-decoration: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; margin-top: 16px; }
+    .btn:hover { background: #2ea043; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div style="font-size: 48px; margin-bottom: 16px;">🦊 ✅</div>
+    <h1>GitLab Connected to MetaStackR</h1>
+    %s
+    <p>Welcome, <strong>%s</strong> (@%s)! Your GitLab account has been authorized.</p>
+    <p style="color: #8b949e; font-size: 14px;">Use the access token below to configure <code>git-meta</code> CLI or set it as your <code>VCS_TOKEN</code>:</p>
+    <div class="token-box">
+      <strong>Access Token:</strong><br>%s
+    </div>
+    <p style="font-size: 13px; color: #8b949e;">Run in terminal: <code>git meta config vcs-token %s</code></p>
+    <a href="https://metastac.kr" class="btn">Return to MetaStackR</a>
+  </div>
+</body>
+</html>`,
+		avatarHTML,
+		template.HTMLEscapeString(displayName),
+		template.HTMLEscapeString(usernameDisplay),
+		template.HTMLEscapeString(tokenData.AccessToken),
+		template.HTMLEscapeString(tokenData.AccessToken),
+	)
+	_, _ = w.Write([]byte(html))
+}
+
 
