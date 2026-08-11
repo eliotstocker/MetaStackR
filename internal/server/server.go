@@ -272,9 +272,10 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 				}
 			}
 
+			vcsClient := s.VCSForRepo(ctx, tracked.RepoFullName)
 			if metaPR.HeadSHA == "" && metaPR.PRNumber > 0 {
 				instID := resolveInstallationID(evt.InstallationID, tracked.InstallationID)
-				if fetchedSHA, err := s.gh.GetPRHeadSHA(ctx, tracked.RepoFullName, metaPR.PRNumber, instID); err == nil && fetchedSHA != "" {
+				if fetchedSHA, err := vcsClient.GetPRHeadSHA(ctx, tracked.RepoFullName, metaPR.PRNumber, instID); err == nil && fetchedSHA != "" {
 					metaPR.HeadSHA = fetchedSHA
 					_ = s.repo.UpdateMetaPRHeadSHA(ctx, metaPR.ID, fetchedSHA)
 				}
@@ -282,12 +283,12 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 
 			if metaPR.HeadSHA != "" {
 				instID := resolveInstallationID(evt.InstallationID, tracked.InstallationID)
-				if err := s.gh.UpdateMetaCheckRun(ctx, tracked.RepoFullName, metaPR.HeadSHA, metaPR, instID); err != nil {
+				if err := vcsClient.UpdateMetaCheckRun(ctx, tracked.RepoFullName, metaPR.HeadSHA, metaPR, instID); err != nil {
 					log.Printf("[checks] Error updating meta check run for %s: %v", tracked.RepoFullName, err)
 				}
 			}
 
-			if s.gh != nil && metaPR.PRNumber > 0 {
+			if metaPR.PRNumber > 0 {
 				parentMetaRepoName := tracked.RepoFullName
 				if metaPR.MetaRepoID != tracked.ID {
 					if parentTracked, err := s.repo.GetTrackedRepoByID(ctx, metaPR.MetaRepoID); err == nil && parentTracked != nil {
@@ -295,7 +296,10 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 					}
 				}
 				instID := resolveInstallationID(evt.InstallationID, tracked.InstallationID)
-				_ = s.gh.EnsureRootPRComment(ctx, parentMetaRepoName, metaPR.PRNumber, metaPR, instID)
+				parentVCS := s.VCSForRepo(ctx, parentMetaRepoName)
+				if parentVCS != nil {
+					_ = parentVCS.EnsureRootPRComment(ctx, parentMetaRepoName, metaPR.PRNumber, metaPR, instID)
+				}
 			}
 			return nil
 		}
@@ -341,20 +345,24 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 			trackedMeta, err := s.repo.GetTrackedRepoByID(ctx, parentMeta.MetaRepoID)
 			if err == nil && trackedMeta != nil {
 				instID := resolveInstallationID(evt.InstallationID, trackedMeta.InstallationID)
+				parentVCS := s.VCSForRepo(ctx, trackedMeta.RepoFullName)
+				childVCS := s.VCSForRepo(ctx, child.RepoFullName)
 				if parentMeta.HeadSHA == "" && parentMeta.PRNumber > 0 {
-					if fetchedSHA, err := s.gh.GetPRHeadSHA(ctx, trackedMeta.RepoFullName, parentMeta.PRNumber, instID); err == nil && fetchedSHA != "" {
+					if fetchedSHA, err := parentVCS.GetPRHeadSHA(ctx, trackedMeta.RepoFullName, parentMeta.PRNumber, instID); err == nil && fetchedSHA != "" {
 						parentMeta.HeadSHA = fetchedSHA
 						_ = s.repo.UpdateMetaPRHeadSHA(ctx, parentMeta.ID, fetchedSHA)
 					}
 				}
 				if parentMeta.HeadSHA != "" {
-					if err := s.gh.UpdateMetaCheckRun(ctx, trackedMeta.RepoFullName, parentMeta.HeadSHA, parentMeta, instID); err != nil {
+					if err := parentVCS.UpdateMetaCheckRun(ctx, trackedMeta.RepoFullName, parentMeta.HeadSHA, parentMeta, instID); err != nil {
 						log.Printf("[checks] Error updating meta check run for %s: %v", trackedMeta.RepoFullName, err)
 					}
 				}
-				if s.gh != nil {
-					_ = s.gh.EnsureChildPRComment(ctx, child.RepoFullName, child.PRNumber, trackedMeta.RepoFullName, parentMeta.PRNumber, parentMeta.BranchName, instID)
-					_ = s.gh.EnsureRootPRComment(ctx, trackedMeta.RepoFullName, parentMeta.PRNumber, parentMeta, instID)
+				if childVCS != nil {
+					_ = childVCS.EnsureChildPRComment(ctx, child.RepoFullName, child.PRNumber, trackedMeta.RepoFullName, parentMeta.PRNumber, parentMeta.BranchName, instID)
+				}
+				if parentVCS != nil {
+					_ = parentVCS.EnsureRootPRComment(ctx, trackedMeta.RepoFullName, parentMeta.PRNumber, parentMeta, instID)
 				}
 				s.evaluateMetaPRReadiness(ctx, parentMeta)
 			}
@@ -385,35 +393,39 @@ func (s *Server) autoSynthesizeChildPRs(ctx context.Context, metaPR *db.MetaPR, 
 		}
 		_ = s.repo.UpsertChildPR(ctx, childPR)
 
-		if parentRepoName != "" && s.gh != nil {
-			_ = s.gh.EnsureChildPRComment(ctx, change.ChildRepo, metaPR.PRNumber, parentRepoName, metaPR.PRNumber, metaPR.BranchName, evt.InstallationID)
+		childVCS := s.VCSForRepo(ctx, change.ChildRepo)
+		if parentRepoName != "" && childVCS != nil {
+			_ = childVCS.EnsureChildPRComment(ctx, change.ChildRepo, metaPR.PRNumber, parentRepoName, metaPR.PRNumber, metaPR.BranchName, evt.InstallationID)
 		}
 	}
 
 	// Also discover child PRs across all tracked submodules matching the branch name
-	if s.gh != nil && metaPR.BranchName != "" {
+	if metaPR.BranchName != "" {
 		instID := resolveInstallationID(evt.InstallationID, tracked.InstallationID)
 		if allTracked, err := s.repo.ListTrackedRepos(ctx); err == nil {
 			for idx, tr := range allTracked {
 				if tr.RepoFullName != parentRepoName {
-					cPRNum, cHeadSHA, cMerged, err := s.gh.GetOpenPRForBranch(ctx, tr.RepoFullName, metaPR.BranchName, instID)
-					if err == nil && cPRNum > 0 {
-						status := "OPEN"
-						if cMerged {
-							status = "MERGED"
+					trVCS := s.VCSForRepo(ctx, tr.RepoFullName)
+					if trVCS != nil {
+						cPRNum, cHeadSHA, cMerged, err := trVCS.GetOpenPRForBranch(ctx, tr.RepoFullName, metaPR.BranchName, instID)
+						if err == nil && cPRNum > 0 {
+							status := "OPEN"
+							if cMerged {
+								status = "MERGED"
+							}
+							childPR := &db.ChildPR{
+								ID:            uuid.New(),
+								MetaPRID:      metaPR.ID,
+								SubmodulePath: tr.RepoFullName,
+								RepoFullName:  tr.RepoFullName,
+								PRNumber:      cPRNum,
+								HeadSHA:       cHeadSHA,
+								Status:        status,
+								DepthLevel:    idx,
+							}
+							_ = s.repo.UpsertChildPR(ctx, childPR)
+							_ = trVCS.EnsureChildPRComment(ctx, tr.RepoFullName, cPRNum, parentRepoName, metaPR.PRNumber, metaPR.BranchName, instID)
 						}
-						childPR := &db.ChildPR{
-							ID:            uuid.New(),
-							MetaPRID:      metaPR.ID,
-							SubmodulePath: tr.RepoFullName,
-							RepoFullName:  tr.RepoFullName,
-							PRNumber:      cPRNum,
-							HeadSHA:       cHeadSHA,
-							Status:        status,
-							DepthLevel:    idx,
-						}
-						_ = s.repo.UpsertChildPR(ctx, childPR)
-						_ = s.gh.EnsureChildPRComment(ctx, tr.RepoFullName, cPRNum, parentRepoName, metaPR.PRNumber, metaPR.BranchName, instID)
 					}
 				}
 			}
@@ -445,10 +457,11 @@ func (s *Server) evaluateMetaPRReadiness(ctx context.Context, metaPR *db.MetaPR)
 	}
 
 	instID := resolveInstallationID(0, trackedMeta.InstallationID)
+	parentVCS := s.VCSForRepo(ctx, trackedMeta.RepoFullName)
 
 	// Rule 3: Require Root PR Approval (if enabled)
-	if trackedMeta.RequireRootApproval && s.gh != nil {
-		approved, err := s.gh.HasApprovedReview(ctx, trackedMeta.RepoFullName, metaPR.PRNumber, instID)
+	if trackedMeta.RequireRootApproval && parentVCS != nil {
+		approved, err := parentVCS.HasApprovedReview(ctx, trackedMeta.RepoFullName, metaPR.PRNumber, instID)
 		if err != nil {
 			log.Printf("[policy] Failed to verify root PR approval for %s#%d: %v", trackedMeta.RepoFullName, metaPR.PRNumber, err)
 			return
@@ -460,8 +473,8 @@ func (s *Server) evaluateMetaPRReadiness(ctx context.Context, metaPR *db.MetaPR)
 	}
 
 	// Rule 4: Required Status Checks (if specified)
-	if len(trackedMeta.RequiredChecks) > 0 && s.gh != nil && metaPR.HeadSHA != "" {
-		passing, missing, err := s.gh.AreRequiredChecksPassing(ctx, trackedMeta.RepoFullName, metaPR.HeadSHA, trackedMeta.RequiredChecks, instID)
+	if len(trackedMeta.RequiredChecks) > 0 && parentVCS != nil && metaPR.HeadSHA != "" {
+		passing, missing, err := parentVCS.AreRequiredChecksPassing(ctx, trackedMeta.RepoFullName, metaPR.HeadSHA, trackedMeta.RequiredChecks, instID)
 		if err != nil {
 			log.Printf("[policy] Failed to verify required checks for %s#%d: %v", trackedMeta.RepoFullName, metaPR.PRNumber, err)
 			return
@@ -473,8 +486,8 @@ func (s *Server) evaluateMetaPRReadiness(ctx context.Context, metaPR *db.MetaPR)
 	}
 
 	// Rule 5: Submodule Changes Only (if enabled, default true)
-	if trackedMeta.SubmoduleChangesOnly && s.gh != nil && metaPR.PRNumber > 0 {
-		nonSubFiles, err := s.gh.HasNonSubmoduleFilesChanged(ctx, trackedMeta.RepoFullName, metaPR.PRNumber, instID)
+	if trackedMeta.SubmoduleChangesOnly && parentVCS != nil && metaPR.PRNumber > 0 {
+		nonSubFiles, err := parentVCS.HasNonSubmoduleFilesChanged(ctx, trackedMeta.RepoFullName, metaPR.PRNumber, instID)
 		if err != nil {
 			log.Printf("[policy] Failed to verify PR changed files for %s#%d: %v", trackedMeta.RepoFullName, metaPR.PRNumber, err)
 			return

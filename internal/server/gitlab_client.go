@@ -125,6 +125,52 @@ func (c *GitLabClient) GetBranchHeadSHA(ctx context.Context, repoFullName string
 	return b.Commit.ID, nil
 }
 
+func (c *GitLabClient) GetOpenPRForBranch(ctx context.Context, repoFullName string, branchName string, installationID int64) (int, string, bool, error) {
+	if repoFullName == "" || branchName == "" {
+		return 0, "", false, nil
+	}
+
+	reqURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests?source_branch=%s&state=all", c.baseURL, c.projectIDOrPath(repoFullName), url.QueryEscape(branchName))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return 0, "", false, err
+	}
+	c.setAuthHeader(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, "", false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, "", false, fmt.Errorf("GitLab API returned HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var mrs []struct {
+		IID         int    `json:"iid"`
+		State       string `json:"state"`
+		SHA         string `json:"sha"`
+		DiffHeadSHA string `json:"diff_head_sha"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&mrs); err != nil {
+		return 0, "", false, err
+	}
+
+	if len(mrs) > 0 {
+		sha := mrs[0].SHA
+		if sha == "" {
+			sha = mrs[0].DiffHeadSHA
+		}
+		merged := strings.EqualFold(mrs[0].State, "merged")
+		return mrs[0].IID, sha, merged, nil
+	}
+
+	return 0, "", false, nil
+}
+
 func (c *GitLabClient) UpdateMetaCheckRun(ctx context.Context, repoFullName string, headSHA string, metaPR *db.MetaPR, installationID int64) error {
 	if repoFullName == "" || headSHA == "" {
 		return nil

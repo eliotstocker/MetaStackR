@@ -17,6 +17,7 @@ type SubmodulePointerUpdate struct {
 type VCSProvider interface {
 	GetPRHeadSHA(ctx context.Context, repo string, prNumber int, installationID int64) (string, error)
 	GetBranchHeadSHA(ctx context.Context, repo string, branchName string, installationID int64) (string, error)
+	GetOpenPRForBranch(ctx context.Context, repo string, branchName string, installationID int64) (int, string, bool, error)
 	UpdateMetaCheckRun(ctx context.Context, repo string, headSHA string, metaPR *db.MetaPR, installationID int64) error
 	EnsureRootPRComment(ctx context.Context, repo string, prNumber int, metaPR *db.MetaPR, installationID int64) error
 	EnsureChildPRComment(ctx context.Context, childRepo string, prNumber int, parentMetaRepo string, parentPRNumber int, branchName string, installationID int64) error
