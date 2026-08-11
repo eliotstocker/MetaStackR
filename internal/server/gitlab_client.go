@@ -50,14 +50,14 @@ func (c *GitLabClient) setAuthHeader(req *http.Request) {
 	if c.token == "" {
 		return
 	}
-	if strings.HasPrefix(c.token, "Bearer ") || strings.HasPrefix(c.token, "gloas-") {
+	if strings.HasPrefix(c.token, "glpat-") {
+		req.Header.Set("PRIVATE-TOKEN", c.token)
+	} else {
 		tokenVal := c.token
 		if !strings.HasPrefix(tokenVal, "Bearer ") {
 			tokenVal = "Bearer " + tokenVal
 		}
 		req.Header.Set("Authorization", tokenVal)
-	} else {
-		req.Header.Set("PRIVATE-TOKEN", c.token)
 	}
 }
 
