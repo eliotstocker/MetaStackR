@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.0...core-v1.1.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* **server:** allow per-repo UUID secret tokens and automated gitlab webhooks ([c8af992](https://github.com/eliotstocker/MetaStackR/commit/c8af992aff64b6b23d6d65a83f26193d5b464956))
+
 # [1.1.0](https://github.com/eliotstocker/MetaStackR/compare/core-v1.0.0...core-v1.1.0) (2026-08-11)
 
 
