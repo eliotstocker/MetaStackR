@@ -1,3 +1,10 @@
+## [1.1.12](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.11...core-v1.1.12) (2026-08-11)
+
+
+### Bug Fixes
+
+* **chrome:** fix ReferenceError tabContainer is not defined in click handler ([a701780](https://github.com/eliotstocker/MetaStackR/commit/a701780ea78dc80a0a7e99800cb47f26f9cbaedb))
+
 ## [1.1.11](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.10...core-v1.1.11) (2026-08-11)
 
 
