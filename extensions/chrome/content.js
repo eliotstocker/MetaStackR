@@ -327,20 +327,18 @@
 
     subTab.addEventListener('click', (e) => {
       e.preventDefault();
-      tabList.querySelectorAll('a').forEach(t => {
+      tabList.querySelectorAll('li, a').forEach(t => {
         t.classList.remove('selected');
         t.classList.remove('active');
         t.classList.remove('PullRequestHeaderTabNav-module__selected__g5kH0');
         t.removeAttribute('aria-current');
-        if (t.parentNode && t.parentNode.classList.contains('nav-item')) {
-          t.parentNode.classList.remove('active');
-        }
       });
       subTab.classList.add('selected');
       subTab.classList.add('active');
       subTab.setAttribute('aria-current', 'page');
-      if (subTab.parentNode && subTab.parentNode.classList.contains('nav-item')) {
-        subTab.parentNode.classList.add('active');
+      if (tabContainer !== subTab) {
+        tabContainer.classList.add('active');
+        tabContainer.classList.add('selected');
       }
 
       showSubmodulesGrid(metaPR, metaPR ? metaPR.child_prs : [], repoFullName);
