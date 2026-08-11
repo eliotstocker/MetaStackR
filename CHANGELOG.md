@@ -1,3 +1,14 @@
+# 1.0.0 (2026-08-11)
+
+
+### Features
+
+* **core:** initial MetaStackr CLI engine, landing website, and CI/CD infrastructure ([5eb9234](https://github.com/eliotstocker/MetaStackR/commit/5eb9234bd73560b40a88b1c595a6ccfcce88e20a))
+* **extension:** Chrome browser extension for GitHub PR submodule synchronization matrix ([ff190b3](https://github.com/eliotstocker/MetaStackR/commit/ff190b3cf19f61737d426b7e38ea99f45ae3c345))
+* **gitlab:** native GitLab support, VCS provider detection, and policy config ([#1](https://github.com/eliotstocker/MetaStackR/issues/1)) ([14a007e](https://github.com/eliotstocker/MetaStackR/commit/14a007e9f8de94620acc4d4fefbc2ac5c1ea817b))
+* **policy:** policy rules engine, git meta config CLI, and submodule_changes_only rule ([3d669b9](https://github.com/eliotstocker/MetaStackR/commit/3d669b941d1f3287d08874a234ff7cf09f0b0d79))
+* **server:** backend webhook engine, GitHub App authentication, and database persistence ([144cf18](https://github.com/eliotstocker/MetaStackR/commit/144cf1889e3723c4df72ff89b76c1c504d9f8a3c))
+
 # 1.0.0 (2026-08-09)
 
 
