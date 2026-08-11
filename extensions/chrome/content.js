@@ -13,6 +13,13 @@
     document.addEventListener('DOMContentLoaded', initialize);
   }
 
+  function getPRUrl(repoFullName, prNumber) {
+    if (window.location.hostname.includes('gitlab.com')) {
+      return `https://gitlab.com/${repoFullName}/-/merge_requests/${prNumber}`;
+    }
+    return `https://github.com/${repoFullName}/pull/${prNumber}`;
+  }
+
   function getPRInfoFromURL() {
     const ghMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
     if (ghMatch) {
@@ -43,13 +50,24 @@
     const prInfo = getPRInfoFromURL();
     if (!prInfo) return;
 
+    if (window.location.hostname.includes('gitlab.com')) {
+      document.body.classList.add('metastackr-gitlab');
+      document.body.classList.remove('metastackr-github');
+    } else {
+      document.body.classList.add('metastackr-github');
+      document.body.classList.remove('metastackr-gitlab');
+    }
+
     const owner = prInfo.owner;
     const repo = prInfo.repo;
     const prNumber = prInfo.prNumber;
     const repoFullName = prInfo.repoFullName;
 
-    // Get current branch from the GitHub DOM if possible
-    const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name');
+    // Get current branch from GitHub or GitLab DOM
+    const headBranchEl = document.querySelector(
+      '.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name, ' +
+      '.ref-name, .source-branch, [data-testid="ref-name"], a[href*="/-/commits/"], .mr-source-branch, span.gl-font-monospace'
+    );
     const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
 
     fetchPRStatus(repoFullName, prNumber, branchName, (metaPR) => {
@@ -121,20 +139,56 @@
 
   document.addEventListener('turbo:before-visit', cleanupMetaStackrPanel);
   window.addEventListener('popstate', cleanupMetaStackrPanel);
+  window.addEventListener('hashchange', () => {
+    const subTab = document.getElementById('metastackr-submodules-tab');
+    if (subTab && (subTab.classList.contains('selected') || subTab.classList.contains('active'))) {
+      if (!window.location.hash.includes('metastackr')) {
+        cleanupMetaStackrPanel();
+      }
+    }
+  });
+
+  // Global capture-phase click listener to intercept native tab clicks before framework stopPropagation
+  document.addEventListener('click', (e) => {
+    const subTab = document.getElementById('metastackr-submodules-tab');
+    if (!subTab) return;
+
+    const isMetaActive = subTab.classList.contains('active') || subTab.classList.contains('selected') || document.body.classList.contains('metastackr-active');
+    if (!isMetaActive) return;
+
+    const clickedEl = e.target.closest('a, button, li, [role="tab"]');
+    if (!clickedEl) return;
+
+    if (clickedEl.id === 'metastackr-submodules-tab' || clickedEl.id === 'metastackr-submodules-tab-li' || clickedEl.querySelector('#metastackr-submodules-tab')) {
+      return; // Clicked MetaStackr tab itself
+    }
+
+    const isNavTab = clickedEl.closest('.nav-item, .nav-link, .tabnav-tab, [role="tab"], .gl-tab-nav-item, .mr-tabs, .nav-tabs, .tabs-wrapper, .tabnav-tabs');
+    if (isNavTab) {
+      stopTabPolling();
+      cleanupMetaStackrPanel();
+    }
+  }, true);
 
   function cleanupMetaStackrPanel() {
+    document.body.classList.remove('metastackr-active');
+
     const container = document.getElementById('metastackr-submodules-panel');
     if (container) {
       container.style.display = 'none';
     }
 
-    const sidebar = document.querySelector('.discussion-sidebar, #partial-discussion-sidebar, [data-component="sidebar"], .js-issue-sidebar, [class*="PageLayout-Sidebar"]');
+    const sidebar = document.querySelector(
+      '.discussion-sidebar, #partial-discussion-sidebar, [data-component="sidebar"], .js-issue-sidebar, [class*="PageLayout-Sidebar"], ' +
+      'aside.right-sidebar, .issuable-sidebar, [data-testid="issuable-sidebar"], .sidebar-wrapper-inner'
+    );
     if (sidebar) {
       sidebar.style.display = '';
     }
 
     const contentArea = document.querySelector(
-      '[class*="PageLayoutContent"], [class*="PageLayout-Content"], .diff-view, .js-diff-container, #files, #discussion_bucket, .js-pull-discussion-timeline, #commits_bucket, #checks_bucket, .Layout-main'
+      '[class*="PageLayoutContent"], [class*="PageLayout-Content"], .diff-view, .js-diff-container, #files, #discussion_bucket, .js-pull-discussion-timeline, #commits_bucket, #checks_bucket, .Layout-main, ' +
+      '.merge-request-details, .issuable-details, #notes, .tab-content, .mr-state-widget'
     );
     if (contentArea) {
       contentArea.style.maxWidth = '';
@@ -149,8 +203,12 @@
     const subTab = document.getElementById('metastackr-submodules-tab');
     if (subTab) {
       subTab.classList.remove('selected');
+      subTab.classList.remove('active');
       subTab.classList.remove('PullRequestHeaderTabNav-module__selected__g5kH0');
       subTab.removeAttribute('aria-current');
+      if (subTab.parentNode && subTab.parentNode.classList.contains('nav-item')) {
+        subTab.parentNode.classList.remove('active');
+      }
     }
   }
 
@@ -159,8 +217,8 @@
   function injectParentMetaPRBanner(metaPR) {
     if (document.getElementById('metastackr-child-pr-banner')) return;
 
-    const parentUrl = `https://github.com/${metaPR.meta_repo_full_name}/pull/${metaPR.pr_number}`;
-    const header = document.querySelector('header[class*="PageLayout-Header"], #repository-container-header, .gh-header');
+    const parentUrl = getPRUrl(metaPR.meta_repo_full_name, metaPR.pr_number);
+    const header = document.querySelector('header[class*="PageLayout-Header"], #repository-container-header, .gh-header, .detail-page-header, .detail-page-description, .mr-title, [data-testid="mr-title"]');
     if (!header) return;
 
     const banner = document.createElement('div');
@@ -190,10 +248,10 @@
   function injectChildSidebarCard(metaPR) {
     if (document.getElementById('metastackr-sidebar-card')) return;
 
-    const sidebar = document.querySelector('.discussion-sidebar, #partial-discussion-sidebar, [data-component="sidebar"], .js-issue-sidebar');
+    const sidebar = document.querySelector('.discussion-sidebar, #partial-discussion-sidebar, [data-component="sidebar"], .js-issue-sidebar, aside.right-sidebar, .issuable-sidebar, [data-testid="issuable-sidebar"], .sidebar-wrapper-inner');
     if (!sidebar) return;
 
-    const parentUrl = `https://github.com/${metaPR.meta_repo_full_name}/pull/${metaPR.pr_number}`;
+    const parentUrl = getPRUrl(metaPR.meta_repo_full_name, metaPR.pr_number);
 
     const card = document.createElement('div');
     card.id = 'metastackr-sidebar-card';
@@ -217,7 +275,7 @@
 
   function injectSubmodulesTab(metaPR, repoFullName, prNumber) {
     if (document.getElementById('metastackr-submodules-tab')) {
-      const existingCounter = document.querySelector('#metastackr-submodules-tab [data-component="CounterLabel"], #metastackr-submodules-tab .Counter');
+      const existingCounter = document.querySelector('#metastackr-submodules-tab [data-component="CounterLabel"], #metastackr-submodules-tab .Counter, #metastackr-submodules-tab .badge');
       if (existingCounter && metaPR && metaPR.child_prs) {
         existingCounter.innerText = metaPR.child_prs.length;
       }
@@ -225,7 +283,8 @@
     }
 
     const tabList = document.querySelector(
-      '[class*="TabNavList"], nav[aria-label*="Pull request"] > div, nav[aria-label*="Pull request"] > ul, nav[aria-label*="Pull request navigation"] > div, nav[aria-label*="Pull request navigation"] > ul, .tabnav-tabs'
+      '[class*="TabNavList"], nav[aria-label*="Pull request"] > div, nav[aria-label*="Pull request"] > ul, nav[aria-label*="Pull request navigation"] > div, nav[aria-label*="Pull request navigation"] > ul, .tabnav-tabs, ' +
+      'ul.mr-tabs, ul.nav-tabs, nav.tabs-wrapper, .merge-request-tabs, [data-testid="mr-tabs"], .gl-tabs-nav'
     );
     if (!tabList) return;
 
@@ -254,12 +313,19 @@
       e.preventDefault();
       tabList.querySelectorAll('a').forEach(t => {
         t.classList.remove('selected');
+        t.classList.remove('active');
         t.classList.remove('PullRequestHeaderTabNav-module__selected__g5kH0');
         t.removeAttribute('aria-current');
+        if (t.parentNode && t.parentNode.classList.contains('nav-item')) {
+          t.parentNode.classList.remove('active');
+        }
       });
       subTab.classList.add('selected');
-      subTab.classList.add('PullRequestHeaderTabNav-module__selected__g5kH0');
+      subTab.classList.add('active');
       subTab.setAttribute('aria-current', 'page');
+      if (subTab.parentNode && subTab.parentNode.classList.contains('nav-item')) {
+        subTab.parentNode.classList.add('active');
+      }
 
       showSubmodulesGrid(metaPR, metaPR ? metaPR.child_prs : [], repoFullName);
 
@@ -297,17 +363,27 @@
       }, 3000);
     });
 
-    tabList.querySelectorAll('a:not(#metastackr-submodules-tab)').forEach(nativeTab => {
-      nativeTab.addEventListener('click', () => {
+    tabList.addEventListener('click', (e) => {
+      const clickedTab = e.target.closest('a, button, li');
+      if (clickedTab && !clickedTab.closest('#metastackr-submodules-tab') && clickedTab.id !== 'metastackr-submodules-tab') {
         stopTabPolling();
         cleanupMetaStackrPanel();
-      });
+      }
     });
 
-    tabList.appendChild(subTab);
+    if (tabList.tagName === 'UL') {
+      const li = document.createElement('li');
+      li.className = 'nav-item';
+      li.appendChild(subTab);
+      tabList.appendChild(li);
+    } else {
+      tabList.appendChild(subTab);
+    }
   }
 
   function showSubmodulesGrid(metaPR, childPRs, repoFullName) {
+    document.body.classList.add('metastackr-active');
+
     const targetRepo = (metaPR && metaPR.meta_repo_full_name) 
       ? metaPR.meta_repo_full_name 
       : (repoFullName || (window.location.pathname.match(/^\/([^\/]+\/[^\/]+)/) || [])[1]);
@@ -321,43 +397,48 @@
       container.className = 'metastackr-panel';
     }
 
-    const prHeader = document.querySelector('header[class*="PageLayout-Header"], #repository-container-header, .gh-header');
+    const prHeader = document.querySelector('header[class*="PageLayout-Header"], #repository-container-header, .gh-header, .detail-page-header, .detail-page-description, .mr-title, [data-testid="mr-title"]');
     if (prHeader) prHeader.style.display = '';
 
     // Hide sidebar on conversation view so matrix takes 100% width
-    const sidebar = document.querySelector('.discussion-sidebar, #partial-discussion-sidebar, [data-component="sidebar"], .js-issue-sidebar, [class*="PageLayout-Sidebar"]');
+    const sidebar = document.querySelector('.discussion-sidebar, #partial-discussion-sidebar, [data-component="sidebar"], .js-issue-sidebar, [class*="PageLayout-Sidebar"], aside.right-sidebar, .issuable-sidebar, [data-testid="issuable-sidebar"], .sidebar-wrapper-inner');
     if (sidebar) sidebar.style.display = 'none';
 
-    const contentArea = document.querySelector(
-      '[class*="PageLayoutContent"], [class*="PageLayout-Content"], .diff-view, .js-diff-container, #files, #discussion_bucket, .js-pull-discussion-timeline, #commits_bucket, #checks_bucket, .Layout-main'
-    );
-
-    if (contentArea) {
-      contentArea.style.maxWidth = '100%';
-      contentArea.style.width = '100%';
-      Array.from(contentArea.children).forEach(child => {
-        if (child.id !== 'metastackr-submodules-panel') {
-          child.style.display = 'none';
-        }
-      });
-      if (container.parentNode !== contentArea) {
-        contentArea.appendChild(container);
+    const tabsContainer = document.querySelector('.merge-request-tabs-container, .js-tabs-affix, .tabs-holder, .tabs-wrapper');
+    if (tabsContainer && tabsContainer.parentNode) {
+      if (container.parentNode !== tabsContainer.parentNode) {
+        tabsContainer.parentNode.insertBefore(container, tabsContainer.nextSibling);
       }
     } else {
-      const fallbackContainer = document.querySelector('#repo-content-turbo-frame, #repo-content-pjax-container, .repository-content');
-      if (fallbackContainer && container.parentNode !== fallbackContainer) {
-        fallbackContainer.appendChild(container);
+      const tabList = document.querySelector(
+        '[class*="TabNavList"], nav[aria-label*="Pull request"] > div, nav[aria-label*="Pull request"] > ul, nav[aria-label*="Pull request navigation"] > div, nav[aria-label*="Pull request navigation"] > ul, .tabnav-tabs, ' +
+        'ul.mr-tabs, ul.nav-tabs, nav.tabs-wrapper, .merge-request-tabs, [data-testid="mr-tabs"], .gl-tabs-nav'
+      );
+
+      if (tabList && tabList.parentNode) {
+        if (container.parentNode !== tabList.parentNode) {
+          tabList.parentNode.insertBefore(container, tabList.nextSibling);
+        }
+      } else {
+        const contentArea = document.querySelector(
+          '[class*="PageLayoutContent"], [class*="PageLayout-Content"], .diff-view, .js-diff-container, #files, #discussion_bucket, .js-pull-discussion-timeline, #commits_bucket, #checks_bucket, .Layout-main, ' +
+          '.merge-request-details, .issuable-details, .tab-content'
+        );
+        if (contentArea && container.parentNode !== contentArea) {
+          contentArea.appendChild(container);
+        }
       }
     }
 
     let rowsHtml = '';
     (childPRs || []).forEach(child => {
       const shaStr = child.head_sha ? child.head_sha.substring(0, 7) : 'head';
+      const childPRUrl = getPRUrl(child.repo_full_name, child.pr_number);
       rowsHtml += `
         <div class="metastackr-grid-row">
           <div class="col-path"><code>${child.submodule_path}</code></div>
           <div class="col-repo">${child.repo_full_name}</div>
-          <div class="col-pr"><a href="https://github.com/${child.repo_full_name}/pull/${child.pr_number}">#${child.pr_number}</a></div>
+          <div class="col-pr"><a href="${childPRUrl}">#${child.pr_number}</a></div>
           <div class="col-sha"><code>${shaStr}</code></div>
           <div class="col-status"><span class="status-badge state-${(child.status || 'open').toLowerCase()}">${child.status || 'OPEN'}</span></div>
         </div>

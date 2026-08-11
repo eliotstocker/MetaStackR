@@ -383,3 +383,114 @@ html[data-color-mode="dark"] {
   font-size: 12px;
   color: var(--ms-fg-default);
 }
+
+/* ==========================================
+   GitLab Pajamas Design System Native Theme
+   ========================================== */
+.metastackr-gitlab {
+  --ms-font-family: -apple-system, BlinkMacSystemFont, "GitLab Sans", "Segoe UI", Roboto, "Noto Sans", Ubuntu, sans-serif;
+  --ms-mono-font: "GitLab Mono", "JetBrains Mono", "Menlo", "DejaVu Sans Mono", Consolas, monospace;
+}
+
+.metastackr-gitlab #metastackr-child-pr-banner,
+.metastackr-gitlab .metastackr-banner-container,
+.metastackr-gitlab .metastackr-panel,
+.metastackr-gitlab #metastackr-sidebar-card {
+  font-family: var(--ms-font-family);
+  border-radius: 4px;
+}
+
+.metastackr-gitlab .metastackr-box {
+  border-radius: 4px;
+  border-color: var(--gl-border-color, #e5e5e5);
+}
+
+.metastackr-gitlab .metastackr-box-header {
+  background: var(--gl-header-bg, #fafafa);
+  border-bottom-color: var(--gl-border-color, #e5e5e5);
+}
+
+.metastackr-gitlab .metastackr-grid-header {
+  background: var(--gl-header-bg, #fafafa);
+  border-bottom-color: var(--gl-border-color, #e5e5e5);
+  font-family: var(--ms-font-family);
+}
+
+/* GitLab Pajamas Buttons */
+.metastackr-gitlab .btn-primary,
+.metastackr-gitlab .btn-block {
+  background-color: #1070ca;
+  border-color: #1070ca;
+  color: #ffffff;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 6px 12px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  box-shadow: none;
+}
+
+.metastackr-gitlab .btn-primary:hover,
+.metastackr-gitlab .btn-block:hover {
+  background-color: #0b5394;
+  border-color: #0b5394;
+  color: #ffffff;
+}
+
+/* GitLab Pajamas Status Badges */
+.metastackr-gitlab .state-open {
+  background-color: #cbe2d6;
+  color: #0d5e33;
+  border: 1px solid #108548;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.metastackr-gitlab .state-merged {
+  background-color: #e1d8f5;
+  color: #4d329a;
+  border: 1px solid #6b4fbb;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.metastackr-gitlab .state-failed {
+  background-color: #fcd0cc;
+  color: #9d1c09;
+  border: 1px solid #dd2b0e;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+/* GitLab Pajamas Code font */
+.metastackr-gitlab code {
+  font-family: var(--ms-mono-font);
+  border-radius: 3px;
+}
+
+/* ==========================================
+   Clean CSS Active State Toggle
+   ========================================== */
+#metastackr-submodules-panel {
+  display: none;
+}
+
+.metastackr-active #metastackr-submodules-panel {
+  display: block !important;
+}
+
+.metastackr-active .issuable-discussion,
+.metastackr-active .tab-content,
+.metastackr-active #notes,
+.metastackr-active .mr-state-widget,
+.metastackr-active .mr-widget-border,
+.metastackr-active #diffs,
+.metastackr-active .diffs,
+.metastackr-active #commits,
+.metastackr-active .discussion-sidebar,
+.metastackr-active aside.right-sidebar,
+.metastackr-active .issuable-sidebar,
+.metastackr-active #discussion_bucket,
+.metastackr-active .js-pull-discussion-timeline {
+  display: none !important;
+}
