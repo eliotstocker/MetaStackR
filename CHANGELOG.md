@@ -1,3 +1,10 @@
+## [1.1.11](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.10...core-v1.1.11) (2026-08-11)
+
+
+### Bug Fixes
+
+* **chrome:** set subTab href to #metastackr and apply gitlab pajama tab styling ([de3c665](https://github.com/eliotstocker/MetaStackR/commit/de3c665525500e327288ecacf041b4e410bc77f0)), closes [#metastackr](https://github.com/eliotstocker/MetaStackR/issues/metastackr)
+
 ## [1.1.10](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.9...core-v1.1.10) (2026-08-11)
 
 
