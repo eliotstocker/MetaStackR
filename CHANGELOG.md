@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/eliotstocker/MetaStackR/compare/core-v1.0.0...core-v1.1.0) (2026-08-11)
+
+
+### Features
+
+* **server:** add GET /oauth/gitlab/callback handler for GitLab OAuth flow ([d38dba8](https://github.com/eliotstocker/MetaStackR/commit/d38dba8274398dfbe65e887ba7d542adb08fb25d))
+
 # 1.0.0 (2026-08-11)
 
 
