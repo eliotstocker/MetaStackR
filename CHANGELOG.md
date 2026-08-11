@@ -1,3 +1,10 @@
+## [1.1.8](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.7...core-v1.1.8) (2026-08-11)
+
+
+### Bug Fixes
+
+* **chrome:** add gitlab tab class selectors and SPA route watcher for tab exit ([1c434a3](https://github.com/eliotstocker/MetaStackR/commit/1c434a391e4e3fd37b6a531beb456b939842048e))
+
 ## [1.1.7](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.6...core-v1.1.7) (2026-08-11)
 
 
