@@ -228,15 +228,13 @@ func (c *GitLabClient) EnsureRootPRComment(ctx context.Context, repoFullName str
 	}
 
 	body, _, _ := GenerateMarkdownTable(metaPR)
-	reqURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes", c.baseURL, c.projectIDOrPath(repoFullName), prNumber)
-	payload := map[string]string{"body": body}
-	jsonBytes, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(jsonBytes))
+	// 1. Fetch existing notes on the MR to see if MetaStackr note already exists
+	listURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes?per_page=100", c.baseURL, c.projectIDOrPath(repoFullName), prNumber)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
 	c.setAuthHeader(req)
 
 	resp, err := c.httpClient.Do(req)
@@ -244,6 +242,54 @@ func (c *GitLabClient) EnsureRootPRComment(ctx context.Context, repoFullName str
 		return err
 	}
 	defer resp.Body.Close()
+
+	var existingNoteID int64
+	var existingBody string
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var notes []struct {
+			ID   int64  `json:"id"`
+			Body string `json:"body"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&notes) == nil {
+			for _, n := range notes {
+				if strings.Contains(n.Body, "Submodule Synchronization") || strings.Contains(n.Body, "Meta-Repo Sync Status") {
+					existingNoteID = n.ID
+					existingBody = n.Body
+					break
+				}
+			}
+		}
+	}
+
+	// 2. If existing note matches body exactly, do nothing
+	if existingNoteID > 0 && strings.TrimSpace(existingBody) == strings.TrimSpace(body) {
+		_ = c.EnsureRootPRDescriptionBody(ctx, repoFullName, prNumber, metaPR, installationID)
+		return nil
+	}
+
+	payload := map[string]string{"body": body}
+	jsonBytes, _ := json.Marshal(payload)
+
+	var updateReq *http.Request
+	if existingNoteID > 0 {
+		// Update existing note in-place via PUT
+		putURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes/%d", c.baseURL, c.projectIDOrPath(repoFullName), prNumber, existingNoteID)
+		updateReq, _ = http.NewRequestWithContext(ctx, http.MethodPut, putURL, bytes.NewReader(jsonBytes))
+	} else {
+		// Create new note via POST
+		postURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes", c.baseURL, c.projectIDOrPath(repoFullName), prNumber)
+		updateReq, _ = http.NewRequestWithContext(ctx, http.MethodPost, postURL, bytes.NewReader(jsonBytes))
+	}
+
+	if updateReq != nil {
+		updateReq.Header.Set("Content-Type", "application/json")
+		c.setAuthHeader(updateReq)
+		if uResp, err := c.httpClient.Do(updateReq); err == nil {
+			uResp.Body.Close()
+		}
+	}
+
 	_ = c.EnsureRootPRDescriptionBody(ctx, repoFullName, prNumber, metaPR, installationID)
 	return nil
 }
@@ -323,22 +369,43 @@ func (c *GitLabClient) EnsureChildPRComment(ctx context.Context, childRepo strin
 	}
 
 	body := fmt.Sprintf("🔗 **MetaStackr Child PR**: Managed by Parent Meta PR [%s#%d](%s/%s/-/merge_requests/%d)", parentMetaRepo, parentPRNumber, c.baseURL, parentMetaRepo, parentPRNumber)
+
+	// Check if note already exists
+	listURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes?per_page=100", c.baseURL, c.projectIDOrPath(childRepo), prNumber)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
+	if err == nil {
+		c.setAuthHeader(req)
+		if resp, err := c.httpClient.Do(req); err == nil {
+			defer resp.Body.Close()
+			var notes []struct {
+				ID   int64  `json:"id"`
+				Body string `json:"body"`
+			}
+			if json.NewDecoder(resp.Body).Decode(&notes) == nil {
+				for _, n := range notes {
+					if strings.Contains(n.Body, "MetaStackr Child PR") {
+						return nil
+					}
+				}
+			}
+		}
+	}
+
 	reqURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes", c.baseURL, c.projectIDOrPath(childRepo), prNumber)
 	payload := map[string]string{"body": body}
 	jsonBytes, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(jsonBytes))
+	postReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(jsonBytes))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	c.setAuthHeader(req)
+	postReq.Header.Set("Content-Type", "application/json")
+	c.setAuthHeader(postReq)
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
+	resp, err := c.httpClient.Do(postReq)
+	if err == nil {
+		resp.Body.Close()
 	}
-	defer resp.Body.Close()
 	return nil
 }
 
