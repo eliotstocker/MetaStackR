@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.3...core-v1.1.4) (2026-08-11)
+
+
+### Bug Fixes
+
+* **server:** deduplicate and edit gitlab MR notes in-place via PUT ([081a36c](https://github.com/eliotstocker/MetaStackR/commit/081a36c116a900c19192e3a99e31345916c3a07f))
+
 ## [1.1.3](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.2...core-v1.1.3) (2026-08-11)
 
 
