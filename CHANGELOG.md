@@ -1,3 +1,10 @@
+## [1.1.6](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.5...core-v1.1.6) (2026-08-11)
+
+
+### Bug Fixes
+
+* **server:** only post/update MR note and do not modify MR description body ([b704e94](https://github.com/eliotstocker/MetaStackR/commit/b704e94af69e55d8048711460d756ec840e6103b))
+
 ## [1.1.5](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.4...core-v1.1.5) (2026-08-11)
 
 
