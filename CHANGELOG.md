@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.2...core-v1.1.3) (2026-08-11)
+
+
+### Bug Fixes
+
+* **server:** send Authorization Bearer header for GitLab OAuth tokens ([2ae3db9](https://github.com/eliotstocker/MetaStackR/commit/2ae3db94c92c36a7ed36428d726e3490e70d840c))
+
 ## [1.1.2](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.1...core-v1.1.2) (2026-08-11)
 
 
