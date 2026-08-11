@@ -253,7 +253,7 @@ func (c *GitLabClient) EnsureRootPRComment(ctx context.Context, repoFullName str
 		}
 		if json.NewDecoder(resp.Body).Decode(&notes) == nil {
 			for _, n := range notes {
-				if strings.Contains(n.Body, "Submodule Synchronization") || strings.Contains(n.Body, "Meta-Repo Sync Status") {
+				if strings.Contains(n.Body, "MetaStackr") || strings.Contains(n.Body, "PR Status Matrix") || strings.Contains(n.Body, "Submodule Synchronization") || strings.Contains(n.Body, "Meta-Repo Sync Status") {
 					existingNoteID = n.ID
 					existingBody = n.Body
 					break
