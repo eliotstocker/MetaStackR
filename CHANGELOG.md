@@ -1,3 +1,10 @@
+## [1.1.7](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.6...core-v1.1.7) (2026-08-11)
+
+
+### Bug Fixes
+
+* **chrome:** refine gitlab pajamas tab layout and capture-phase tab switching ([1e5e098](https://github.com/eliotstocker/MetaStackR/commit/1e5e098921d09135476f222a77d54157c470bc27))
+
 ## [1.1.6](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.5...core-v1.1.6) (2026-08-11)
 
 
