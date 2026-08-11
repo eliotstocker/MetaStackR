@@ -324,6 +324,15 @@
       `;
     }
 
+    let tabContainer = subTab;
+    if (tabList.tagName === 'UL') {
+      const li = document.createElement('li');
+      li.id = 'metastackr-submodules-tab-li';
+      li.className = 'nav-item metastackr-tab-li';
+      li.appendChild(subTab);
+      tabContainer = li;
+    }
+
     let activeTabPollInterval = null;
 
     function stopTabPolling() {
@@ -336,6 +345,8 @@
     subTab.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+
+      window.location.hash = '#metastackr';
 
       tabList.querySelectorAll('li, a').forEach(t => {
         if (t !== subTab && t !== tabContainer) {
@@ -389,15 +400,7 @@
       }, 3000);
     });
 
-    if (tabList.tagName === 'UL') {
-      const li = document.createElement('li');
-      li.id = 'metastackr-submodules-tab-li';
-      li.className = 'nav-item metastackr-tab-li';
-      li.appendChild(subTab);
-      tabList.appendChild(li);
-    } else {
-      tabList.appendChild(subTab);
-    }
+    tabList.appendChild(tabContainer);
   }
 
   function showSubmodulesGrid(metaPR, childPRs, repoFullName) {
