@@ -1,3 +1,10 @@
+## [1.1.10](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.9...core-v1.1.10) (2026-08-11)
+
+
+### Bug Fixes
+
+* **chrome:** remove redundant tabList click listener causing self-closing race condition ([1085b28](https://github.com/eliotstocker/MetaStackR/commit/1085b28408af5462eb8546c3b292dec6621aeb50))
+
 ## [1.1.9](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.8...core-v1.1.9) (2026-08-11)
 
 
