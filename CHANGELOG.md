@@ -1,3 +1,10 @@
+## [1.1.9](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.8...core-v1.1.9) (2026-08-11)
+
+
+### Bug Fixes
+
+* **chrome:** de-select all native li and a tab items when activating metastackr tab ([31a20c4](https://github.com/eliotstocker/MetaStackR/commit/31a20c48161a27231b52236bc3883871d1f18e5b))
+
 ## [1.1.8](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.7...core-v1.1.8) (2026-08-11)
 
 
