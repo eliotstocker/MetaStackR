@@ -1,6 +1,6 @@
 {
   "branches": ["main"],
-  "tagFormat": "v${version}",
+  "tagFormat": "core-v${version}",
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
@@ -11,15 +11,11 @@
           { "scope": "chrome", "release": false },
           { "scope": "jetbrains", "release": false },
           { "scope": "web", "release": false },
-          { "scope": "core", "type": "feat", "release": "minor" },
-          { "scope": "core", "type": "fix", "release": "patch" },
-          { "scope": "core", "type": "perf", "release": "patch" },
-          { "scope": "core", "type": "refactor", "release": "patch" },
-          { "scope": "core", "breaking": true, "release": "major" },
-          { "scope": "cli", "type": "feat", "release": "minor" },
-          { "scope": "cli", "type": "fix", "release": "patch" },
-          { "scope": "daemon", "type": "feat", "release": "minor" },
-          { "scope": "daemon", "type": "fix", "release": "patch" }
+          { "type": "feat", "release": "minor" },
+          { "type": "fix", "release": "patch" },
+          { "type": "perf", "release": "patch" },
+          { "type": "refactor", "release": "patch" },
+          { "breaking": true, "release": "major" }
         ]
       }
     ],
