@@ -306,15 +306,23 @@
 
     const childPRs = (metaPR && metaPR.child_prs) ? metaPR.child_prs : [];
 
+    const isGitLab = window.location.hostname.includes('gitlab.com');
+
     const subTab = document.createElement('a');
     subTab.id = 'metastackr-submodules-tab';
-    subTab.href = '#';
-    subTab.className = 'tabnav-tab js-pjax-history-navigate PullRequestHeaderTabNav-module__TabNavLink__JCc1O position-relative flex-shrink-0 text-normal PullRequestHeaderNavigation-module__overrideLineHeight__TeEsl';
-    subTab.innerHTML = `
-      <svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-zap fg-muted mr-2 d-none d-sm-inline-block" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align: text-bottom;">
-        <path d="M8.22 1.754a.75.75 0 0 0-1.44 0L4.537 7.033A.75.75 0 0 0 5.228 8.1h2.522l-1.97 6.142a.75.75 0 0 0 1.44 0l2.243-5.279A.75.75 0 0 0 8.772 7.9H6.25l1.97-6.146Z"></path>
-      </svg>MetaStackr<span aria-hidden="true" data-variant="secondary" data-component="CounterLabel" class="ml-2 prc-CounterLabel-CounterLabel-X-kRU Counter">${childPRs.length}</span>
-    `;
+    subTab.href = '#metastackr';
+
+    if (isGitLab) {
+      subTab.className = 'nav-link';
+      subTab.innerHTML = `⚡ MetaStackr <span class="gl-badge badge badge-pill gl-tab-counter-badge sm ml-1">${childPRs.length}</span>`;
+    } else {
+      subTab.className = 'tabnav-tab js-pjax-history-navigate PullRequestHeaderTabNav-module__TabNavLink__JCc1O position-relative flex-shrink-0 text-normal PullRequestHeaderNavigation-module__overrideLineHeight__TeEsl';
+      subTab.innerHTML = `
+        <svg data-component="Octicon" aria-hidden="true" focusable="false" class="octicon octicon-zap fg-muted mr-2 d-none d-sm-inline-block" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" display="inline-block" overflow="visible" style="vertical-align: text-bottom;">
+          <path d="M8.22 1.754a.75.75 0 0 0-1.44 0L4.537 7.033A.75.75 0 0 0 5.228 8.1h2.522l-1.97 6.142a.75.75 0 0 0 1.44 0l2.243-5.279A.75.75 0 0 0 8.772 7.9H6.25l1.97-6.146Z"></path>
+        </svg>MetaStackr<span aria-hidden="true" data-variant="secondary" data-component="CounterLabel" class="ml-2 prc-CounterLabel-CounterLabel-X-kRU Counter">${childPRs.length}</span>
+      `;
+    }
 
     let activeTabPollInterval = null;
 
