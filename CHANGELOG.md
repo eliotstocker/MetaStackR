@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.1...core-v1.1.2) (2026-08-11)
+
+
+### Bug Fixes
+
+* **server:** use VCSForRepo for gitlab MR comment and check run dispatch ([a90ac61](https://github.com/eliotstocker/MetaStackR/commit/a90ac61e380c2b81ab7deee9ea80e2ca932fa92e))
+
 ## [1.1.1](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.0...core-v1.1.1) (2026-08-11)
 
 
