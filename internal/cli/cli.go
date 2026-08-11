@@ -533,6 +533,7 @@ func newCreatePRCmd() *cobra.Command {
 				return fmt.Errorf("invalid merge method '%s'. Allowed values: merge, squash, rebase", opts.MergeMethod)
 			}
 
+			opts.Interactive = !jsonOutput
 			results, err := gitutils.CreatePRs(cwd, opts)
 			if err != nil {
 				if jsonOutput {
@@ -1153,6 +1154,12 @@ func newSetupWebhookCmd() *cobra.Command {
 				return err
 			}
 
+			remoteURL, _ := gitutils.ExecGit(cwd, "config", "--get", "remote.origin.url")
+			vcsProvider := gitutils.DetectVCSProvider(cwd, remoteURL)
+			if vcsProvider == "gitlab" && targetURL == "https://api.metastac.kr/webhooks/github" {
+				targetURL = "https://api.metastac.kr/webhooks/gitlab"
+			}
+
 			if secret == "" {
 				secret = os.Getenv("WEBHOOK_SECRET")
 				if secret == "" {
@@ -1160,7 +1167,7 @@ func newSetupWebhookCmd() *cobra.Command {
 				}
 			}
 
-			err = gitutils.RegisterGitHubWebhook(cwd, targetURL, secret, "")
+			err = gitutils.RegisterVCSWebhook(cwd, targetURL, secret, "")
 			if err != nil {
 				if jsonOutput {
 					printJSON(false, err.Error(), nil)
@@ -1214,14 +1221,21 @@ func newInitCmd() *cobra.Command {
 				return err
 			}
 
+			remoteURL, _ := gitutils.ExecGit(cwd, "config", "--get", "remote.origin.url")
+			vcsProvider := gitutils.DetectVCSProvider(cwd, remoteURL)
+			if vcsProvider == "gitlab" && webhookURL == "https://api.metastac.kr/webhooks/github" {
+				webhookURL = fmt.Sprintf("%s/webhooks/gitlab", strings.TrimSuffix(serverURL, "/"))
+			}
+
 			// 1. Register repository on remote backend server
 			if !jsonOutput {
-				fmt.Printf("1. Registering repository '%s' with MetaStackr server at %s...\n", repoName, serverURL)
+				fmt.Printf("1. Registering repository '%s' (%s) with MetaStackr server at %s...\n", repoName, vcsProvider, serverURL)
 			}
 
 			trackPayload := map[string]interface{}{
 				"full_name":       repoName,
 				"allow_code_pull": allowCodePull,
+				"vcs_provider":    vcsProvider,
 			}
 			trackBytes, err := json.Marshal(trackPayload)
 			if err != nil {
@@ -1282,9 +1296,12 @@ func newInitCmd() *cobra.Command {
 				for _, sub := range localStatus.Submodules {
 					subRepoName, err := gitutils.GetMetaRepoName(filepath.Join(cwd, sub.Path))
 					if err == nil && subRepoName != "" && subRepoName != repoName {
+						subRemoteURL, _ := gitutils.ExecGit(filepath.Join(cwd, sub.Path), "config", "--get", "remote.origin.url")
+						subVCS := gitutils.DetectVCSProvider(filepath.Join(cwd, sub.Path), subRemoteURL)
 						subTrackPayload := map[string]interface{}{
 							"full_name":       subRepoName,
 							"allow_code_pull": allowCodePull,
+							"vcs_provider":    subVCS,
 						}
 						if subTrackBytes, err := json.Marshal(subTrackPayload); err == nil {
 							if req, err := http.NewRequest(http.MethodPost, trackURL, bytes.NewReader(subTrackBytes)); err == nil {
@@ -1329,8 +1346,21 @@ func newInitCmd() *cobra.Command {
 				fmt.Println("  ✅ Git hooks installed successfully.")
 			}
 
-			// 3. Register GitHub Webhooks
-			if appInstalledOnRepo {
+			// 3. Register Webhooks (GitHub vs GitLab)
+			if vcsProvider == "gitlab" {
+				if !jsonOutput {
+					fmt.Println("\n3. GitLab Webhook Setup:")
+				}
+				err = gitutils.RegisterGitLabWebhook(cwd, webhookURL, secret, "")
+				if err != nil && !jsonOutput {
+					fmt.Printf("\n   👉 Manual Webhook Setup Instructions for GitLab (if automated setup fails):\n")
+					fmt.Printf("      1. Open your project on GitLab -> Settings -> Webhooks\n")
+					fmt.Printf("      2. Add Webhook URL: %s\n", webhookURL)
+					fmt.Printf("      3. Secret Token:    %s\n", secret)
+					fmt.Println("      4. Select Trigger Events: 'Merge request events'")
+					fmt.Println("      5. Click 'Add webhook' to complete onboarding!")
+				}
+			} else if appInstalledOnRepo {
 				if !jsonOutput {
 					fmt.Println("\n3. ✅ MetaStackr GitHub App is installed and has permission for this repository. Skipping manual webhook setup!")
 				}

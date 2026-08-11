@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -35,20 +36,25 @@ func (h *LambdaHandler) Proxy(ctx context.Context, req events.APIGatewayV2HTTPRe
 		return events.APIGatewayV2HTTPResponse{}, err
 	}
 
-	headers := v1Resp.Headers
-	if headers == nil {
-		headers = make(map[string]string)
+	headers := make(map[string]string)
+	for k, v := range v1Resp.Headers {
+		headers[k] = v
 	}
+	for k, vals := range v1Resp.MultiValueHeaders {
+		if len(vals) > 0 {
+			headers[k] = strings.Join(vals, ", ")
+		}
+	}
+
 	headers["Access-Control-Allow-Origin"] = "*"
 	headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
 	headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
 
 	return events.APIGatewayV2HTTPResponse{
-		StatusCode:        v1Resp.StatusCode,
-		Headers:           headers,
-		MultiValueHeaders: v1Resp.MultiValueHeaders,
-		Body:              v1Resp.Body,
-		IsBase64Encoded:   v1Resp.IsBase64Encoded,
+		StatusCode:      v1Resp.StatusCode,
+		Headers:         headers,
+		Body:            v1Resp.Body,
+		IsBase64Encoded: v1Resp.IsBase64Encoded,
 	}, nil
 }
 

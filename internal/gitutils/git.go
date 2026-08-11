@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -100,8 +101,17 @@ func parseRepoOwnerAndName(rawURL string) string {
 	if strings.HasPrefix(rawURL, "git@github.com:") {
 		return strings.TrimPrefix(rawURL, "git@github.com:")
 	}
+	if strings.HasPrefix(rawURL, "git@gitlab.com:") {
+		return strings.TrimPrefix(rawURL, "git@gitlab.com:")
+	}
+	if idx := strings.Index(rawURL, ":"); idx != -1 && strings.HasPrefix(rawURL, "git@") {
+		return rawURL[idx+1:]
+	}
 	if strings.HasPrefix(rawURL, "https://github.com/") {
 		return strings.TrimPrefix(rawURL, "https://github.com/")
+	}
+	if strings.HasPrefix(rawURL, "https://gitlab.com/") {
+		return strings.TrimPrefix(rawURL, "https://gitlab.com/")
 	}
 	parts := strings.Split(rawURL, "/")
 	if len(parts) >= 2 {
@@ -531,6 +541,147 @@ func RegisterGitHubWebhook(rootDir, targetURL, secret, token string) error {
 	return nil
 }
 
+func GetGitLabToken() string {
+	if token := os.Getenv("GITLAB_TOKEN"); token != "" {
+		return token
+	}
+
+	out, err := exec.Command("glab", "auth", "status", "-t").CombinedOutput()
+	if err == nil {
+		lines := strings.Split(string(out), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "Token") || strings.Contains(line, "token") {
+				parts := strings.Split(line, ":")
+				if len(parts) >= 2 {
+					tok := strings.TrimSpace(parts[len(parts)-1])
+					if tok != "" && !strings.Contains(tok, "*") {
+						return tok
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func RegisterGitLabWebhook(rootDir, targetURL, secret, token string) error {
+	repoName, err := GetMetaRepoName(rootDir)
+	if err != nil {
+		return fmt.Errorf("failed to get repository name: %w", err)
+	}
+
+	if token == "" {
+		token = GetGitLabToken()
+	}
+
+	registerOne := func(name string) error {
+		// 1. Try glab CLI API first if available (uses OS keyring authentication natively)
+		if _, err := exec.LookPath("glab"); err == nil {
+			glCmd := exec.Command("glab", "api", fmt.Sprintf("projects/%s/hooks", url.PathEscape(name)),
+				"-X", "POST",
+				"-F", fmt.Sprintf("url=%s", targetURL),
+				"-F", fmt.Sprintf("token=%s", secret),
+				"-F", "merge_requests_events=true",
+				"-F", "push_events=true",
+			)
+			if glOut, glErr := glCmd.CombinedOutput(); glErr == nil {
+				return nil
+			} else {
+				log.Printf("[gitlab-webhook] glab api attempt note for %s: %s", name, strings.TrimSpace(string(glOut)))
+			}
+		}
+
+		// 2. Direct HTTP REST API request with PRIVATE-TOKEN
+		payload := map[string]interface{}{
+			"url":                     targetURL,
+			"token":                   secret,
+			"merge_requests_events":   true,
+			"push_events":             true,
+			"enable_ssl_verification": true,
+		}
+
+		jsonBytes, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+
+		apiURL := fmt.Sprintf("https://gitlab.com/api/v4/projects/%s/hooks", url.PathEscape(name))
+		req, err := http.NewRequest(http.MethodPost, apiURL, bytes.NewReader(jsonBytes))
+		if err != nil {
+			return err
+		}
+
+		if token != "" {
+			req.Header.Set("PRIVATE-TOKEN", token)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to make HTTP request to GitLab: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+				return fmt.Errorf("GitLab API HTTP %d (%s). Set GITLAB_TOKEN or run 'glab auth login'", resp.StatusCode, string(bodyBytes))
+			}
+			return fmt.Errorf("GitLab API returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+		return nil
+	}
+
+	fmt.Printf("Registering GitLab webhook for parent repository: %s...\n", repoName)
+	if err := registerOne(repoName); err != nil {
+		fmt.Printf("  ℹ️ Webhook registration note: %v\n", err)
+	} else {
+		fmt.Printf("  ✅ Parent repository GitLab webhook registered.\n")
+	}
+
+	status, err := GetLocalStatus(rootDir)
+	if err != nil {
+		fmt.Printf("  ⚠️ Could not query submodules: %v\n", err)
+		return nil
+	}
+
+	for _, sub := range status.Submodules {
+		subDir := rootDir + "/" + sub.Path
+		subRepo, err := GetMetaRepoName(subDir)
+		if err != nil {
+			fmt.Printf("  ⚠️ Could not resolve repository name for submodule '%s' (%s): %v\n", sub.Path, subDir, err)
+			continue
+		}
+
+		fmt.Printf("Registering GitLab webhook for submodule: %s...\n", subRepo)
+		if err := registerOne(subRepo); err != nil {
+			fmt.Printf("  ⚠️ Submodule webhook registration note: %v\n", err)
+		} else {
+			fmt.Printf("  ✅ Submodule GitLab webhook registered.\n")
+		}
+	}
+
+	return nil
+}
+
+func RegisterVCSWebhook(rootDir, targetURL, secret, token string) error {
+	remoteURL, _ := ExecGit(rootDir, "config", "--get", "remote.origin.url")
+	vcsType := DetectVCSProvider(rootDir, remoteURL)
+
+	if vcsType == "gitlab" {
+		if targetURL == "" || strings.HasSuffix(targetURL, "/webhooks/github") {
+			targetURL = "https://api.metastac.kr/webhooks/gitlab"
+		}
+		return RegisterGitLabWebhook(rootDir, targetURL, secret, token)
+	}
+
+	if targetURL == "" {
+		targetURL = "https://api.metastac.kr/webhooks/github"
+	}
+	return RegisterGitHubWebhook(rootDir, targetURL, secret, token)
+}
+
 type PRResult struct {
 	RepoPath   string `json:"repo_path"`
 	RepoName   string `json:"repo_name"`
@@ -549,6 +700,7 @@ type CreatePROptions struct {
 	MergeMethod string
 	Draft       bool
 	ForceWeb    bool
+	Interactive bool
 }
 
 func OpenInBrowser(url string) error {
@@ -618,6 +770,49 @@ func CreatePRs(rootDir string, opts CreatePROptions) ([]PRResult, error) {
 
 	if len(targets) == 0 {
 		return nil, fmt.Errorf("no submodules or meta-repo have non-base feature branches (base: %s)", baseBranch)
+	}
+
+	if !opts.ForceWeb && opts.Interactive {
+		missingTools := make(map[string]string)
+		for _, target := range targets {
+			dir := rootDir
+			if !target.isMeta {
+				dir = rootDir + "/" + target.path
+			}
+			remoteURL, _ := ExecGit(dir, "remote", "get-url", "origin")
+			vcsType := DetectVCSProvider(dir, remoteURL)
+
+			hasToken := false
+			if vcsType == "gitlab" && os.Getenv("GITLAB_TOKEN") != "" {
+				hasToken = true
+			}
+			if vcsType == "github" && GetGHToken() != "" {
+				hasToken = true
+			}
+
+			if !hasToken {
+				if installed, tool, instructions := CheckCLITools(vcsType); !installed {
+					missingTools[tool] = instructions
+				}
+			}
+		}
+
+		if len(missingTools) > 0 {
+			for tool, instructions := range missingTools {
+				fmt.Printf("⚠️ CLI tool '%s' is not installed (%s).\n", tool, instructions)
+			}
+			fmt.Println("\nWould you like to:")
+			fmt.Println("  [1] Open compare / PR pages in web browser to create PRs manually")
+			fmt.Println("  [2] Quit to install missing CLI tool(s) first")
+			fmt.Print("Enter choice [1/2] (default 1): ")
+
+			var input string
+			_, _ = fmt.Scanln(&input)
+			input = strings.TrimSpace(input)
+			if input == "2" {
+				return nil, fmt.Errorf("aborted PR creation to install missing CLI tool(s)")
+			}
+		}
 	}
 
 	token := GetGHToken()

@@ -174,8 +174,18 @@ func (s *Server) handleGitLabWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.webhookSecret != "" && tokenHeader != "" && tokenHeader != s.webhookSecret {
-		http.Error(w, "Invalid secret token", http.StatusUnauthorized)
-		return
+		isValidToken := false
+		if s.repo != nil {
+			if repoUUID, err := uuid.Parse(tokenHeader); err == nil {
+				if _, err := s.repo.GetTrackedRepoByID(r.Context(), repoUUID); err == nil {
+					isValidToken = true
+				}
+			}
+		}
+		if !isValidToken {
+			http.Error(w, "Invalid secret token", http.StatusUnauthorized)
+			return
+		}
 	}
 
 	event, err := ParseGitLabWebhook(eventTypeHeader, payload)
@@ -601,6 +611,7 @@ func (s *Server) handleRetryMerge(w http.ResponseWriter, r *http.Request) {
 type trackRepoRequest struct {
 	FullName      string `json:"full_name"`
 	AllowCodePull bool   `json:"allow_code_pull"`
+	VCSProvider   string `json:"vcs_provider"`
 }
 
 func (s *Server) handleTrackRepo(w http.ResponseWriter, r *http.Request) {
@@ -618,12 +629,18 @@ func (s *Server) handleTrackRepo(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(req.FullName, "/")
 	owner, name := parts[0], parts[1]
 
+	vcsProv := req.VCSProvider
+	if vcsProv == "" {
+		vcsProv = "github"
+	}
+
 	tracked := &db.TrackedMetaRepo{
 		RepoOwner:     owner,
 		RepoName:      name,
 		RepoFullName:  req.FullName,
 		IsEnabled:      true,
 		AllowCodePull:  req.AllowCodePull,
+		VCSProvider:    vcsProv,
 	}
 
 	if err := s.repo.CreateTrackedRepo(r.Context(), tracked); err != nil {
