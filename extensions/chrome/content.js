@@ -148,6 +148,20 @@
     }
   });
 
+  // SPA Route Watcher for non-hash location changes
+  let lastObservedUrl = window.location.href;
+  setInterval(() => {
+    if (window.location.href !== lastObservedUrl) {
+      lastObservedUrl = window.location.href;
+      const subTab = document.getElementById('metastackr-submodules-tab');
+      if (subTab && (subTab.classList.contains('selected') || subTab.classList.contains('active'))) {
+        if (!window.location.hash.includes('metastackr')) {
+          cleanupMetaStackrPanel();
+        }
+      }
+    }
+  }, 300);
+
   // Global capture-phase click listener to intercept native tab clicks before framework stopPropagation
   document.addEventListener('click', (e) => {
     const subTab = document.getElementById('metastackr-submodules-tab');
@@ -163,7 +177,9 @@
       return; // Clicked MetaStackr tab itself
     }
 
-    const isNavTab = clickedEl.closest('.nav-item, .nav-link, .tabnav-tab, [role="tab"], .gl-tab-nav-item, .mr-tabs, .nav-tabs, .tabs-wrapper, .tabnav-tabs');
+    const isNavTab = clickedEl.closest(
+      '.notes-tab, .commits-tab, .pipelines-tab, .diffs-tab, .merge-request-tabs, .mr-tabs, .nav-tabs, .tabs-wrapper, .tabnav-tabs, .nav-item, .nav-link, [role="tab"], .gl-tab-nav-item'
+    );
     if (isNavTab) {
       stopTabPolling();
       cleanupMetaStackrPanel();
