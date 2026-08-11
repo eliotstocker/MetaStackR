@@ -1,3 +1,10 @@
+## [1.1.5](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.4...core-v1.1.5) (2026-08-11)
+
+
+### Bug Fixes
+
+* **server:** match MetaStackr note header string to prevent infinite webhook loop ([5e570c5](https://github.com/eliotstocker/MetaStackR/commit/5e570c569879cb42f36c912d6e413de929ab3fb9))
+
 ## [1.1.4](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.3...core-v1.1.4) (2026-08-11)
 
 
