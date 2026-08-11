@@ -148,14 +148,145 @@ main {
   border-color: var(--gradient-to);
 }
 
+/* Dropdown Menu Styles */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-btn {
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.dropdown-btn:hover {
+  color: var(--fg);
+  border-color: var(--gradient-to);
+}
+
+.btn-primary.dropdown-btn {
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 500;
+  border: 1px solid var(--fg);
+  padding: 12px 20px;
+  font-size: 0.95rem;
+}
+
+.btn-primary.dropdown-btn:hover {
+  opacity: 0.95;
+  border-color: var(--fg);
+}
+
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  background: #141C17;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+  min-width: 190px;
+  z-index: 100;
+  overflow: hidden;
+  padding: 6px 0;
+  text-align: left;
+}
+
+.nav .dropdown-menu {
+  right: 0;
+  left: auto;
+}
+
+.dropdown:hover .dropdown-menu,
+.dropdown:focus-within .dropdown-menu {
+  display: block;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  color: var(--fg) !important;
+  text-decoration: none;
+  font-size: 0.9rem;
+  margin-left: 0 !important;
+  transition: background 0.15s ease;
+}
+
+.dropdown-item:hover {
+  background: rgba(250, 204, 21, 0.15);
+  color: var(--gradient-to) !important;
+}
+
 .demo {
   padding: 24px 0 56px;
   text-align: center;
 }
 
+.platform-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+  color: var(--fg);
+  border-color: var(--gradient-to);
+}
+
+.tab-btn.active {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+  font-weight: 500;
+}
+
+.demo-media-container {
+  position: relative;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #0B100D;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+}
+
+.demo-video {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 12px;
+}
+
 #demo-player {
   border-radius: 10px;
-  border: 1px solid var(--border);
   overflow: hidden;
 }
 

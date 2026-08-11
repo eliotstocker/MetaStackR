@@ -34,11 +34,15 @@ func (r *Repository) CreateTrackedRepo(ctx context.Context, repo *TrackedMetaRep
 	}
 	repo.CreatedAt = time.Now()
 
+	if repo.VCSProvider == "" {
+		repo.VCSProvider = "github"
+	}
+
 	query := `
-		INSERT INTO tracked_meta_repos (id, repo_owner, repo_name, repo_full_name, installation_id, is_enabled, allow_code_pull, require_root_approval, auto_merge_enabled, required_checks, default_merge_method, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		INSERT INTO tracked_meta_repos (id, repo_owner, repo_name, repo_full_name, installation_id, is_enabled, allow_code_pull, require_root_approval, auto_merge_enabled, vcs_provider, gitlab_project_id, vcs_token, required_checks, default_merge_method, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (repo_full_name) 
-		DO UPDATE SET installation_id = EXCLUDED.installation_id, is_enabled = EXCLUDED.is_enabled, allow_code_pull = EXCLUDED.allow_code_pull
+		DO UPDATE SET installation_id = EXCLUDED.installation_id, is_enabled = EXCLUDED.is_enabled, allow_code_pull = EXCLUDED.allow_code_pull, vcs_provider = EXCLUDED.vcs_provider, gitlab_project_id = EXCLUDED.gitlab_project_id, vcs_token = EXCLUDED.vcs_token
 		RETURNING id, created_at
 	`
 	reqChecksJSON, _ := json.Marshal(repo.RequiredChecks)
@@ -50,7 +54,7 @@ func (r *Repository) CreateTrackedRepo(ctx context.Context, repo *TrackedMetaRep
 	}
 	err := r.db.QueryRowContext(
 		ctx, query,
-		repo.ID, repo.RepoOwner, repo.RepoName, repo.RepoFullName, repo.InstallationID, repo.IsEnabled, repo.AllowCodePull, repo.RequireRootApproval, repo.AutoMergeEnabled, string(reqChecksJSON), repo.DefaultMergeMethod, repo.CreatedAt,
+		repo.ID, repo.RepoOwner, repo.RepoName, repo.RepoFullName, repo.InstallationID, repo.IsEnabled, repo.AllowCodePull, repo.RequireRootApproval, repo.AutoMergeEnabled, repo.VCSProvider, repo.GitLabProjectID, repo.VCSToken, string(reqChecksJSON), repo.DefaultMergeMethod, repo.CreatedAt,
 	).Scan(&repo.ID, &repo.CreatedAt)
 
 	if err != nil {
@@ -61,14 +65,14 @@ func (r *Repository) CreateTrackedRepo(ctx context.Context, repo *TrackedMetaRep
 
 func (r *Repository) GetTrackedRepoByFullName(ctx context.Context, fullName string) (*TrackedMetaRepo, error) {
 	query := `
-		SELECT id, repo_owner, repo_name, repo_full_name, installation_id, is_enabled, allow_code_pull, require_root_approval, auto_merge_enabled, COALESCE(submodule_changes_only, true), required_checks, default_merge_method, created_at
+		SELECT id, repo_owner, repo_name, repo_full_name, installation_id, is_enabled, allow_code_pull, require_root_approval, auto_merge_enabled, COALESCE(submodule_changes_only, true), COALESCE(vcs_provider, 'github'), COALESCE(gitlab_project_id, 0), COALESCE(vcs_token, ''), required_checks, default_merge_method, created_at
 		FROM tracked_meta_repos
 		WHERE repo_full_name = $1
 	`
 	repo := &TrackedMetaRepo{}
 	var reqChecksBytes []byte
 	err := r.db.QueryRowContext(ctx, query, fullName).Scan(
-		&repo.ID, &repo.RepoOwner, &repo.RepoName, &repo.RepoFullName, &repo.InstallationID, &repo.IsEnabled, &repo.AllowCodePull, &repo.RequireRootApproval, &repo.AutoMergeEnabled, &repo.SubmoduleChangesOnly, &reqChecksBytes, &repo.DefaultMergeMethod, &repo.CreatedAt,
+		&repo.ID, &repo.RepoOwner, &repo.RepoName, &repo.RepoFullName, &repo.InstallationID, &repo.IsEnabled, &repo.AllowCodePull, &repo.RequireRootApproval, &repo.AutoMergeEnabled, &repo.SubmoduleChangesOnly, &repo.VCSProvider, &repo.GitLabProjectID, &repo.VCSToken, &reqChecksBytes, &repo.DefaultMergeMethod, &repo.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -82,14 +86,14 @@ func (r *Repository) GetTrackedRepoByFullName(ctx context.Context, fullName stri
 
 func (r *Repository) GetTrackedRepoByID(ctx context.Context, id uuid.UUID) (*TrackedMetaRepo, error) {
 	query := `
-		SELECT id, repo_owner, repo_name, repo_full_name, installation_id, is_enabled, allow_code_pull, require_root_approval, auto_merge_enabled, COALESCE(submodule_changes_only, true), required_checks, default_merge_method, created_at
+		SELECT id, repo_owner, repo_name, repo_full_name, installation_id, is_enabled, allow_code_pull, require_root_approval, auto_merge_enabled, COALESCE(submodule_changes_only, true), COALESCE(vcs_provider, 'github'), COALESCE(gitlab_project_id, 0), COALESCE(vcs_token, ''), required_checks, default_merge_method, created_at
 		FROM tracked_meta_repos
 		WHERE id = $1
 	`
 	repo := &TrackedMetaRepo{}
 	var reqChecksBytes []byte
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
-		&repo.ID, &repo.RepoOwner, &repo.RepoName, &repo.RepoFullName, &repo.InstallationID, &repo.IsEnabled, &repo.AllowCodePull, &repo.RequireRootApproval, &repo.AutoMergeEnabled, &repo.SubmoduleChangesOnly, &reqChecksBytes, &repo.DefaultMergeMethod, &repo.CreatedAt,
+		&repo.ID, &repo.RepoOwner, &repo.RepoName, &repo.RepoFullName, &repo.InstallationID, &repo.IsEnabled, &repo.AllowCodePull, &repo.RequireRootApproval, &repo.AutoMergeEnabled, &repo.SubmoduleChangesOnly, &repo.VCSProvider, &repo.GitLabProjectID, &repo.VCSToken, &reqChecksBytes, &repo.DefaultMergeMethod, &repo.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -107,7 +111,13 @@ func (r *Repository) UpdateTrackedRepoInstallationID(ctx context.Context, id uui
 	return err
 }
 
-func (r *Repository) UpdateTrackedRepoSettings(ctx context.Context, repoFullName string, requireRootApproval bool, autoMergeEnabled bool, requiredChecks []string, defaultMergeMethod string, submoduleChangesOnly bool) error {
+func (r *Repository) UpdateTrackedRepoVCSToken(ctx context.Context, repoFullName string, token string) error {
+	query := `UPDATE tracked_meta_repos SET vcs_token = $1 WHERE repo_full_name = $2`
+	_, err := r.db.ExecContext(ctx, query, token, repoFullName)
+	return err
+}
+
+func (r *Repository) UpdateTrackedRepoSettings(ctx context.Context, repoFullName string, requireRootApproval bool, autoMergeEnabled bool, requiredChecks []string, defaultMergeMethod string, submoduleChangesOnly bool, vcsToken string, vcsProvider string) error {
 	reqChecksJSON, _ := json.Marshal(requiredChecks)
 	if len(requiredChecks) == 0 {
 		reqChecksJSON = []byte("[]")
@@ -118,10 +128,10 @@ func (r *Repository) UpdateTrackedRepoSettings(ctx context.Context, repoFullName
 
 	query := `
 		UPDATE tracked_meta_repos 
-		SET require_root_approval = $1, auto_merge_enabled = $2, required_checks = $3, default_merge_method = $4, submodule_changes_only = $5
-		WHERE repo_full_name = $6
+		SET require_root_approval = $1, auto_merge_enabled = $2, required_checks = $3, default_merge_method = $4, submodule_changes_only = $5, vcs_token = CASE WHEN $6 <> '' THEN $6 ELSE vcs_token END, vcs_provider = CASE WHEN $7 <> '' THEN $7 ELSE vcs_provider END
+		WHERE repo_full_name = $8
 	`
-	_, err := r.db.ExecContext(ctx, query, requireRootApproval, autoMergeEnabled, string(reqChecksJSON), defaultMergeMethod, submoduleChangesOnly, repoFullName)
+	_, err := r.db.ExecContext(ctx, query, requireRootApproval, autoMergeEnabled, string(reqChecksJSON), defaultMergeMethod, submoduleChangesOnly, vcsToken, vcsProvider, repoFullName)
 	return err
 }
 

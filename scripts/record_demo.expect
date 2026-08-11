@@ -1,0 +1,64 @@
+#!/usr/bin/expect -f
+
+# Turn off standard output buffering for smooth typing effect
+set timeout 60
+log_user 1
+
+# Helper function to simulate human typing
+proc type_text {str {delay 0.05}} {
+    foreach char [split $str ""] {
+        send -- $char
+        after [expr {int($delay * 1000)}]
+    }
+    after 300
+    send "\r"
+}
+
+# Start interactive Zsh session
+spawn zsh -f
+
+# Set up clean prompt and colors
+send "export PS1='%F{green}metastackr-demo%f %F{yellow}main%f $ '\r"
+expect "metastackr-demo"
+
+# Step 1: Inspect status and local submodule drift
+after 1000
+type_text "git meta status"
+expect "metastackr-demo"
+
+# Step 2: Switch / create branch system-wide across all submodules
+after 1500
+type_text "git meta checkout -b feat/multi-vcs-payments"
+expect "metastackr-demo"
+
+# Step 3: Make real changes across submodules
+after 1500
+type_text "echo '// stripe gateway integration' >> services/sub-a/main.go"
+expect "metastackr-demo"
+after 800
+type_text "echo '// paypal gateway integration' >> services/sub-b/index.js"
+expect "metastackr-demo"
+
+# Step 4: Interrogate local submodule drift
+after 1500
+type_text "git meta status"
+expect "metastackr-demo"
+
+# Step 4: Atomic coordinated commit across dirty submodules and parent repo
+after 1500
+type_text "git meta commit -m \"feat(payments): add multi-currency stripe & paypal support\""
+expect "metastackr-demo"
+
+# Step 5: Bottom-up push enforcement
+after 1500
+type_text "git meta push"
+expect "metastackr-demo"
+
+# Step 6: System-wide Pull Request / Merge Request creation
+after 1500
+type_text "git meta create-pr"
+expect "metastackr-demo"
+
+after 2000
+send "exit\r"
+expect eof

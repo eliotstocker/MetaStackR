@@ -764,6 +764,8 @@ func newConfigCmd() *cobra.Command {
 				RequireRootApproval  bool     `json:"require_root_approval"`
 				AutoMergeEnabled     bool     `json:"auto_merge_enabled"`
 				SubmoduleChangesOnly bool     `json:"submodule_changes_only"`
+				VCSToken             string   `json:"vcs_token"`
+				VCSProvider          string   `json:"vcs_provider"`
 				RequiredChecks       []string `json:"required_checks"`
 				DefaultMergeMethod   string   `json:"default_merge_method"`
 			}
@@ -788,6 +790,8 @@ func newConfigCmd() *cobra.Command {
 					return "merge-method"
 				case "required-checks", "checks", "required_checks":
 					return "required-checks"
+				case "vcs-provider", "vcs_provider", "vcs", "provider":
+					return "vcs-provider"
 				default:
 					return k
 				}
@@ -816,11 +820,17 @@ func newConfigCmd() *cobra.Command {
 					method = "merge"
 				case "required-checks":
 					reqChecks = []string{}
+				case "vcs-token":
+					// unset token
+				case "vcs-provider":
+					_, _ = gitutils.ExecGit(cwd, "config", "--unset", "metastackr.vcs-provider")
+					_, _ = gitutils.ExecGit(cwd, "config", "--unset", "metastackr.vcs")
+					return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks, subOnly, "", "github")
 				default:
-					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks", key)
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks, vcs-token, vcs-provider", key)
 				}
 
-				return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks, subOnly)
+				return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks, subOnly, "", currentSettings.VCSProvider)
 			}
 
 			// Mode 2: No args or --list -> List all config key-values (git config --list)
@@ -836,6 +846,18 @@ func newConfigCmd() *cobra.Command {
 				fmt.Printf("submodule-changes-only=%t\n", currentSettings.SubmoduleChangesOnly)
 				fmt.Printf("merge-method=%s\n", currentSettings.DefaultMergeMethod)
 				fmt.Printf("required-checks=%s\n", checksVal)
+				if currentSettings.VCSToken != "" {
+					fmt.Println("vcs-token=********")
+				}
+				vcsVal := currentSettings.VCSProvider
+				if vcsVal == "" {
+					if localVal, err := gitutils.ExecGit(cwd, "config", "--get", "metastackr.vcs-provider"); err == nil && strings.TrimSpace(localVal) != "" {
+						vcsVal = strings.TrimSpace(localVal)
+					} else {
+						vcsVal = "github"
+					}
+				}
+				fmt.Printf("vcs-provider=%s\n", vcsVal)
 				return nil
 			}
 
@@ -854,8 +876,23 @@ func newConfigCmd() *cobra.Command {
 					val = currentSettings.DefaultMergeMethod
 				case "required-checks":
 					val = strings.Join(currentSettings.RequiredChecks, ",")
+				case "vcs-token":
+					if currentSettings.VCSToken != "" {
+						val = "********"
+					} else {
+						val = ""
+					}
+				case "vcs-provider":
+					val = currentSettings.VCSProvider
+					if val == "" {
+						if localVal, err := gitutils.ExecGit(cwd, "config", "--get", "metastackr.vcs-provider"); err == nil && strings.TrimSpace(localVal) != "" {
+							val = strings.TrimSpace(localVal)
+						} else {
+							val = "github"
+						}
+					}
 				default:
-					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks", key)
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks, vcs-token, vcs-provider", key)
 				}
 
 				if jsonOutput {
@@ -872,6 +909,8 @@ func newConfigCmd() *cobra.Command {
 			subOnly := currentSettings.SubmoduleChangesOnly
 			method := currentSettings.DefaultMergeMethod
 			reqChecks := currentSettings.RequiredChecks
+			vcsProvider := currentSettings.VCSProvider
+			vcsToken := ""
 
 			if len(args) >= 2 {
 				key := normalizeKey(args[0])
@@ -899,8 +938,17 @@ func newConfigCmd() *cobra.Command {
 							}
 						}
 					}
+				case "vcs-token":
+					vcsToken = strings.TrimSpace(val)
+				case "vcs-provider":
+					valLower := strings.ToLower(strings.TrimSpace(val))
+					if valLower != "github" && valLower != "gitlab" {
+						return fmt.Errorf("invalid vcs-provider '%s'. Allowed values: github, gitlab", val)
+					}
+					vcsProvider = valLower
+					_, _ = gitutils.ExecGit(cwd, "config", "metastackr.vcs-provider", valLower)
 				default:
-					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks", key)
+					return fmt.Errorf("unknown config key '%s'. Supported keys: auto-merge, require-root-approval, submodule-changes-only, merge-method, required-checks, vcs-token, vcs-provider", key)
 				}
 			}
 
@@ -928,7 +976,7 @@ func newConfigCmd() *cobra.Command {
 				}
 			}
 
-			return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks, subOnly)
+			return updateRepoSettings(serverURL, repoName, reqApproval, autoMerge, method, reqChecks, subOnly, vcsToken, vcsProvider)
 		},
 	}
 
@@ -945,7 +993,7 @@ func newConfigCmd() *cobra.Command {
 	return cmd
 }
 
-func updateRepoSettings(serverURL, repoName string, reqApproval, autoMerge bool, method string, reqChecks []string, subOnly bool) error {
+func updateRepoSettings(serverURL, repoName string, reqApproval, autoMerge bool, method string, reqChecks []string, subOnly bool, vcsToken string, vcsProvider string) error {
 	updatePayload := map[string]interface{}{
 		"repo":                   repoName,
 		"require_root_approval":  reqApproval,
@@ -953,6 +1001,8 @@ func updateRepoSettings(serverURL, repoName string, reqApproval, autoMerge bool,
 		"submodule_changes_only": subOnly,
 		"required_checks":        reqChecks,
 		"default_merge_method":   method,
+		"vcs_token":              vcsToken,
+		"vcs_provider":           vcsProvider,
 	}
 
 	jsonBytes, _ := json.Marshal(updatePayload)
