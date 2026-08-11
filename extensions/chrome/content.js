@@ -327,11 +327,15 @@
 
     subTab.addEventListener('click', (e) => {
       e.preventDefault();
+      e.stopPropagation();
+
       tabList.querySelectorAll('li, a').forEach(t => {
-        t.classList.remove('selected');
-        t.classList.remove('active');
-        t.classList.remove('PullRequestHeaderTabNav-module__selected__g5kH0');
-        t.removeAttribute('aria-current');
+        if (t !== subTab && t !== tabContainer) {
+          t.classList.remove('selected');
+          t.classList.remove('active');
+          t.classList.remove('PullRequestHeaderTabNav-module__selected__g5kH0');
+          t.removeAttribute('aria-current');
+        }
       });
       subTab.classList.add('selected');
       subTab.classList.add('active');
@@ -346,7 +350,7 @@
       // Re-fetch latest PR status on tab click
       const prMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
       if (prMatch) {
-        const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name');
+        const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name, .source-branch');
         const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
         fetchPRStatus(repoFullName, prNumber, branchName, (latestPR) => {
           if (latestPR) {
@@ -359,13 +363,13 @@
       // Auto-poll status every 3s while MetaStackr tab is active
       stopTabPolling();
       activeTabPollInterval = setInterval(() => {
-        if (!document.getElementById('metastackr-submodules-tab') || !subTab.classList.contains('selected')) {
+        if (!document.getElementById('metastackr-submodules-tab') || (!subTab.classList.contains('selected') && !subTab.classList.contains('active'))) {
           stopTabPolling();
           return;
         }
         const prMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
         if (prMatch) {
-          const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name');
+          const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name, .source-branch');
           const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
           fetchPRStatus(repoFullName, prNumber, branchName, (latestPR) => {
             if (latestPR) {
@@ -377,17 +381,10 @@
       }, 3000);
     });
 
-    tabList.addEventListener('click', (e) => {
-      const clickedTab = e.target.closest('a, button, li');
-      if (clickedTab && !clickedTab.closest('#metastackr-submodules-tab') && clickedTab.id !== 'metastackr-submodules-tab') {
-        stopTabPolling();
-        cleanupMetaStackrPanel();
-      }
-    });
-
     if (tabList.tagName === 'UL') {
       const li = document.createElement('li');
-      li.className = 'nav-item';
+      li.id = 'metastackr-submodules-tab-li';
+      li.className = 'nav-item metastackr-tab-li';
       li.appendChild(subTab);
       tabList.appendChild(li);
     } else {
