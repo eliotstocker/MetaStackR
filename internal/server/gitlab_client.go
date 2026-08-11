@@ -264,7 +264,6 @@ func (c *GitLabClient) EnsureRootPRComment(ctx context.Context, repoFullName str
 
 	// 2. If existing note matches body exactly, do nothing
 	if existingNoteID > 0 && strings.TrimSpace(existingBody) == strings.TrimSpace(body) {
-		_ = c.EnsureRootPRDescriptionBody(ctx, repoFullName, prNumber, metaPR, installationID)
 		return nil
 	}
 
@@ -290,76 +289,10 @@ func (c *GitLabClient) EnsureRootPRComment(ctx context.Context, repoFullName str
 		}
 	}
 
-	_ = c.EnsureRootPRDescriptionBody(ctx, repoFullName, prNumber, metaPR, installationID)
 	return nil
 }
 
 func (c *GitLabClient) EnsureRootPRDescriptionBody(ctx context.Context, repoFullName string, prNumber int, metaPR *db.MetaPR, installationID int64) error {
-	if repoFullName == "" || prNumber <= 0 {
-		return nil
-	}
-
-	tableMarkdown, _, _ := GenerateMarkdownTable(metaPR)
-
-	reqURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d", c.baseURL, c.projectIDOrPath(repoFullName), prNumber)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return err
-	}
-	c.setAuthHeader(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil
-	}
-
-	var mr struct {
-		Description string `json:"description"`
-	}
-	_ = json.NewDecoder(resp.Body).Decode(&mr)
-
-	currentDesc := mr.Description
-	newDesc := currentDesc
-	startIdx := strings.Index(currentDesc, "### 🔄 Submodule Synchronization")
-	if startIdx != -1 {
-		endIdx := strings.Index(currentDesc[startIdx:], "\n---\n")
-		if endIdx != -1 {
-			newDesc = currentDesc[:startIdx] + tableMarkdown + currentDesc[startIdx+endIdx+5:]
-		} else {
-			newDesc = currentDesc[:startIdx] + tableMarkdown
-		}
-	} else {
-		if currentDesc != "" {
-			newDesc = currentDesc + "\n\n" + tableMarkdown
-		} else {
-			newDesc = tableMarkdown
-		}
-	}
-
-	if newDesc == currentDesc {
-		return nil
-	}
-
-	putURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d", c.baseURL, c.projectIDOrPath(repoFullName), prNumber)
-	payload := map[string]string{"description": newDesc}
-	jsonBytes, _ := json.Marshal(payload)
-
-	putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, putURL, bytes.NewReader(jsonBytes))
-	if err != nil {
-		return err
-	}
-	putReq.Header.Set("Content-Type", "application/json")
-	c.setAuthHeader(putReq)
-
-	putResp, err := c.httpClient.Do(putReq)
-	if err == nil {
-		putResp.Body.Close()
-	}
 	return nil
 }
 
