@@ -3,7 +3,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const { repo, prNumber, branch } = request;
     const tryFetch = (serverURL, fallbackURL) => {
       const prParam = prNumber ? `&pr=${prNumber}` : '';
-      const url = `${serverURL}/api/v1/prs/status?repo=${encodeURIComponent(repo)}${prParam}&branch=${encodeURIComponent(branch)}`;
+      const url = `${serverURL}/api/v1/prs/status?repo=${encodeURIComponent(repo)}${prParam}&branch=${encodeURIComponent(branch || '')}`;
+      console.log('[MetaStackr Background] Querying status:', url);
       fetch(url)
         .then(res => {
           if (!res.ok) throw new Error('Unreachable server');
@@ -11,14 +12,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         })
         .then(data => {
           if (data && data.meta_pr) {
+            console.log('[MetaStackr Background] Received MetaPR from', serverURL, data.meta_pr);
             sendResponse({ success: true, metaPR: data.meta_pr, serverURL });
           } else if (fallbackURL) {
             tryFetch(fallbackURL, null);
           } else {
+            console.log('[MetaStackr Background] No MetaPR returned from', serverURL);
             sendResponse({ success: false, metaPR: null });
           }
         })
         .catch(err => {
+          console.warn('[MetaStackr Background] Fetch failed from', serverURL, err.message);
           if (fallbackURL) {
             tryFetch(fallbackURL, null);
           } else {

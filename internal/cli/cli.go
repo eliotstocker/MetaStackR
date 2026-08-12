@@ -1232,10 +1232,18 @@ func newInitCmd() *cobra.Command {
 				fmt.Printf("1. Registering repository '%s' (%s) with MetaStackr server at %s...\n", repoName, vcsProvider, serverURL)
 			}
 
+			gitlabToken := os.Getenv("GITLAB_TOKEN")
+			if gitlabToken == "" {
+				if tok, err := gitutils.ExecGit(cwd, "config", "--get", "metastackr.gitlab-token"); err == nil {
+					gitlabToken = strings.TrimSpace(tok)
+				}
+			}
+
 			trackPayload := map[string]interface{}{
 				"full_name":       repoName,
 				"allow_code_pull": allowCodePull,
 				"vcs_provider":    vcsProvider,
+				"vcs_token":       gitlabToken,
 			}
 			trackBytes, err := json.Marshal(trackPayload)
 			if err != nil {
@@ -1298,6 +1306,9 @@ func newInitCmd() *cobra.Command {
 					if err == nil && subRepoName != "" && subRepoName != repoName {
 						subRemoteURL, _ := gitutils.ExecGit(filepath.Join(cwd, sub.Path), "config", "--get", "remote.origin.url")
 						subVCS := gitutils.DetectVCSProvider(filepath.Join(cwd, sub.Path), subRemoteURL)
+						if subVCS == "unknown" || subVCS == "" {
+							subVCS = vcsProvider
+						}
 						subTrackPayload := map[string]interface{}{
 							"full_name":       subRepoName,
 							"allow_code_pull": allowCodePull,

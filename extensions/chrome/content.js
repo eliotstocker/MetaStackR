@@ -1,11 +1,11 @@
-(function() {
+(function () {
   'use strict';
 
   // GitHub uses Turbo Drive (pjax) to swap page content without full reloads
   document.addEventListener('turbo:load', initialize);
   document.addEventListener('turbo:render', initialize);
   document.addEventListener('pjax:end', initialize);
-  
+
   // Fallback for direct page loads
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     initialize();
@@ -25,12 +25,49 @@
     if (ghMatch) {
       return { owner: ghMatch[1], repo: ghMatch[2], prNumber: parseInt(ghMatch[3], 10), repoFullName: `${ghMatch[1]}/${ghMatch[2]}` };
     }
-    const glMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/(?:-\/)?merge_requests\/(\d+)/);
+    const glMatch = window.location.pathname.match(/^\/(.+?)\/(?:-\/)?merge_requests\/(\d+)/);
     if (glMatch) {
-      return { owner: glMatch[1], repo: glMatch[2], prNumber: parseInt(glMatch[3], 10), repoFullName: `${glMatch[1]}/${glMatch[2]}` };
+      const fullPath = glMatch[1];
+      const prNumber = parseInt(glMatch[2], 10);
+      const parts = fullPath.split('/');
+      const repo = parts[parts.length - 1];
+      const owner = parts.slice(0, parts.length - 1).join('/');
+      return { owner, repo, prNumber, repoFullName: fullPath };
     }
     return null;
   }
+
+  function getBranchName() {
+    if (window.location.hostname.includes('gitlab.com')) {
+      const glSourceEl = document.querySelector(
+        '[data-testid="mr-widget-source-branch"], .js-source-branch, .mr-source-branch, ' +
+        'a[data-testid="source-branch-link"], .source-branch, .mr-widget-section .source-branch'
+      );
+      if (glSourceEl) {
+        let text = glSourceEl.innerText.trim();
+        text = text.split(/\s+/)[0];
+        if (text && !/^[0-9a-f]{7,40}$/i.test(text)) {
+          return text;
+        }
+      }
+    }
+
+    const headBranchEl = document.querySelector(
+      '.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], ' +
+      '.branch-name, .ref-name, .source-branch, [data-testid="ref-name"]'
+    );
+    if (headBranchEl) {
+      let text = headBranchEl.innerText.trim();
+      text = text.split(/\s+/)[0];
+      if (text && !/^[0-9a-f]{7,40}$/i.test(text)) {
+        return text;
+      }
+    }
+
+    return 'head';
+  }
+
+
 
   // Observe DOM changes to re-inject component if dynamic navigation wipes it out
   const observer = new MutationObserver(() => {
@@ -62,13 +99,7 @@
     const repo = prInfo.repo;
     const prNumber = prInfo.prNumber;
     const repoFullName = prInfo.repoFullName;
-
-    // Get current branch from GitHub or GitLab DOM
-    const headBranchEl = document.querySelector(
-      '.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name, ' +
-      '.ref-name, .source-branch, [data-testid="ref-name"], a[href*="/-/commits/"], .mr-source-branch, span.gl-font-monospace'
-    );
-    const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
+    const branchName = getBranchName();
 
     fetchPRStatus(repoFullName, prNumber, branchName, (metaPR) => {
       if (!metaPR) return;
@@ -92,13 +123,16 @@
   let activeServerURL = 'https://api.metastac.kr';
 
   function fetchPRStatus(repo, prNumber, branch, callback) {
+    console.log('[MetaStackr] Fetching status for repo:', repo, 'pr:', prNumber, 'branch:', branch);
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
       chrome.runtime.sendMessage({ action: 'fetchPRStatus', repo, prNumber, branch }, (response) => {
         if (!chrome.runtime.lastError && response && response.metaPR) {
           if (response.serverURL) activeServerURL = response.serverURL;
+          console.log('[MetaStackr] Status response received via background script:', response.metaPR);
           callback(response.metaPR);
           return;
         }
+        console.log('[MetaStackr] Background script fallback -> running directFetchPRStatus');
         directFetchPRStatus(repo, prNumber, branch, callback);
       });
     } else {
@@ -107,26 +141,25 @@
   }
 
   function directFetchPRStatus(repo, prNumber, branch, callback) {
-    const tryFetch = (serverURL, fallbackURL) => {
-      const url = `${serverURL}/api/v1/prs/status?repo=${encodeURIComponent(repo)}&pr=${prNumber}&branch=${encodeURIComponent(branch)}`;
+    const tryFetch = (serverURL, branchParam, nextFallback) => {
+      const url = `${serverURL}/api/v1/prs/status?repo=${encodeURIComponent(repo)}&pr=${prNumber}&branch=${encodeURIComponent(branchParam)}`;
+      console.log('[MetaStackr Direct Fetch] Requesting:', url);
       fetch(url)
-        .then(res => {
-          if (!res.ok) throw new Error('Unreachable server');
-          return res.json();
-        })
+        .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (data && data.meta_pr) {
             activeServerURL = serverURL;
+            console.log('[MetaStackr Direct Fetch] Received MetaPR:', data.meta_pr);
             callback(data.meta_pr);
-          } else if (fallbackURL) {
-            tryFetch(fallbackURL, null);
+          } else if (nextFallback) {
+            nextFallback();
           } else {
             callback(null);
           }
         })
         .catch(() => {
-          if (fallbackURL) {
-            tryFetch(fallbackURL, null);
+          if (nextFallback) {
+            nextFallback();
           } else {
             console.log('[MetaStackr] Standalone backend not active or repo untracked.');
             callback(null);
@@ -134,7 +167,72 @@
         });
     };
 
-    tryFetch('https://api.metastac.kr', 'http://localhost:8080');
+    // Try live API with branch -> localhost with branch -> live API fallback (head) -> localhost fallback (head)
+    tryFetch('https://api.metastac.kr', branch, () => {
+      tryFetch('http://localhost:8080', branch, () => {
+        if (branch !== 'head' && branch !== '') {
+          tryFetch('https://api.metastac.kr', 'head', () => {
+            tryFetch('http://localhost:8080', 'head', () => callback(null));
+          });
+        } else {
+          callback(null);
+        }
+      });
+    });
+  }
+
+  let activeTabPollInterval = null;
+
+  function stopTabPolling() {
+    if (typeof activeTabPollInterval !== 'undefined' && activeTabPollInterval) {
+      clearInterval(activeTabPollInterval);
+      activeTabPollInterval = null;
+    }
+  }
+
+  function cleanupMetaStackrPanel() {
+    if (typeof stopTabPolling === 'function') {
+      stopTabPolling();
+    }
+    document.body.classList.remove('metastackr-active');
+
+    const container = document.getElementById('metastackr-submodules-panel');
+    if (container) {
+      container.style.display = 'none';
+    }
+
+    const sidebar = document.querySelector(
+      '.discussion-sidebar, #partial-discussion-sidebar, [data-component="sidebar"], .js-issue-sidebar, [class*="PageLayout-Sidebar"], ' +
+      'aside.right-sidebar, .issuable-sidebar, [data-testid="issuable-sidebar"], .sidebar-wrapper-inner'
+    );
+    if (sidebar) {
+      sidebar.style.display = '';
+    }
+
+    const contentArea = document.querySelector(
+      '[class*="PageLayoutContent"], [class*="PageLayout-Content"], .diff-view, .js-diff-container, #files, #discussion_bucket, .js-pull-discussion-timeline, #commits_bucket, #checks_bucket, .Layout-main, ' +
+      '.merge-request-details, .issuable-details, #notes, .tab-content, .mr-state-widget'
+    );
+    if (contentArea) {
+      contentArea.style.maxWidth = '';
+      contentArea.style.width = '';
+      Array.from(contentArea.children).forEach(child => {
+        if (child.id !== 'metastackr-submodules-panel') {
+          child.style.display = '';
+        }
+      });
+    }
+
+    const subTab = document.getElementById('metastackr-submodules-tab');
+    if (subTab) {
+      subTab.classList.remove('selected');
+      subTab.classList.remove('active');
+      subTab.classList.remove('PullRequestHeaderTabNav-module__selected__g5kH0');
+      subTab.removeAttribute('aria-current');
+      if (subTab.parentNode && subTab.parentNode.classList.contains('nav-item')) {
+        subTab.parentNode.classList.remove('active');
+      }
+    }
   }
 
   document.addEventListener('turbo:before-visit', cleanupMetaStackrPanel);
@@ -181,52 +279,12 @@
       '.notes-tab, .commits-tab, .pipelines-tab, .diffs-tab, .merge-request-tabs, .mr-tabs, .nav-tabs, .tabs-wrapper, .tabnav-tabs, .nav-item, .nav-link, [role="tab"], .gl-tab-nav-item'
     );
     if (isNavTab) {
-      stopTabPolling();
+      if (typeof stopTabPolling === 'function') {
+        stopTabPolling();
+      }
       cleanupMetaStackrPanel();
     }
   }, true);
-
-  function cleanupMetaStackrPanel() {
-    document.body.classList.remove('metastackr-active');
-
-    const container = document.getElementById('metastackr-submodules-panel');
-    if (container) {
-      container.style.display = 'none';
-    }
-
-    const sidebar = document.querySelector(
-      '.discussion-sidebar, #partial-discussion-sidebar, [data-component="sidebar"], .js-issue-sidebar, [class*="PageLayout-Sidebar"], ' +
-      'aside.right-sidebar, .issuable-sidebar, [data-testid="issuable-sidebar"], .sidebar-wrapper-inner'
-    );
-    if (sidebar) {
-      sidebar.style.display = '';
-    }
-
-    const contentArea = document.querySelector(
-      '[class*="PageLayoutContent"], [class*="PageLayout-Content"], .diff-view, .js-diff-container, #files, #discussion_bucket, .js-pull-discussion-timeline, #commits_bucket, #checks_bucket, .Layout-main, ' +
-      '.merge-request-details, .issuable-details, #notes, .tab-content, .mr-state-widget'
-    );
-    if (contentArea) {
-      contentArea.style.maxWidth = '';
-      contentArea.style.width = '';
-      Array.from(contentArea.children).forEach(child => {
-        if (child.id !== 'metastackr-submodules-panel') {
-          child.style.display = '';
-        }
-      });
-    }
-
-    const subTab = document.getElementById('metastackr-submodules-tab');
-    if (subTab) {
-      subTab.classList.remove('selected');
-      subTab.classList.remove('active');
-      subTab.classList.remove('PullRequestHeaderTabNav-module__selected__g5kH0');
-      subTab.removeAttribute('aria-current');
-      if (subTab.parentNode && subTab.parentNode.classList.contains('nav-item')) {
-        subTab.parentNode.classList.remove('active');
-      }
-    }
-  }
 
   // --- CHILD REPO: Banner & Sidebar Link back to Root Meta PR ---
 
@@ -289,20 +347,41 @@
 
   // --- PARENT REPO: Submodules Tab & Cascade Merge Sidebar ---
 
-  function injectSubmodulesTab(metaPR, repoFullName, prNumber) {
+  function injectSubmodulesTab(metaPR, repoFullName, prNumber, retryCount = 0) {
     if (document.getElementById('metastackr-submodules-tab')) {
-      const existingCounter = document.querySelector('#metastackr-submodules-tab [data-component="CounterLabel"], #metastackr-submodules-tab .Counter, #metastackr-submodules-tab .badge');
+      const existingCounter = document.querySelector(
+        '#metastackr-submodules-tab .gl-badge-content, ' +
+        '#metastackr-submodules-tab [data-component="CounterLabel"], ' +
+        '#metastackr-submodules-tab .Counter, ' +
+        '#metastackr-submodules-tab .badge, ' +
+        '#metastackr-submodules-tab .gl-badge, ' +
+        '#metastackr-submodules-tab .gl-tab-counter-badge'
+      );
       if (existingCounter && metaPR && metaPR.child_prs) {
         existingCounter.innerText = metaPR.child_prs.length;
       }
       return;
     }
 
-    const tabList = document.querySelector(
+    let tabList = document.querySelector(
       '[class*="TabNavList"], nav[aria-label*="Pull request"] > div, nav[aria-label*="Pull request"] > ul, nav[aria-label*="Pull request navigation"] > div, nav[aria-label*="Pull request navigation"] > ul, .tabnav-tabs, ' +
-      'ul.mr-tabs, ul.nav-tabs, nav.tabs-wrapper, .merge-request-tabs, [data-testid="mr-tabs"], .gl-tabs-nav'
+      'ul.mr-tabs, ul.nav-tabs, nav.tabs-wrapper, .merge-request-tabs, [data-testid="mr-tabs"], .gl-tabs-nav, ul.gl-tabs-nav, ' +
+      '[data-testid="merge-request-tabs"], .issuable-tabs, .tabs-holder ul, .merge-request-tabs-container ul, .js-tabs-affix ul, [role="tablist"]'
     );
-    if (!tabList) return;
+
+    if (!tabList) {
+      const anyTabLink = document.querySelector('.notes-tab, .commits-tab, .pipelines-tab, .diffs-tab, .gl-tab-nav-item, a[href*="#notes"], a[href*="#diffs"], a[href*="merge_requests"]');
+      if (anyTabLink) {
+        tabList = anyTabLink.closest('ul, nav, [role="tablist"]') || anyTabLink.parentElement;
+      }
+    }
+
+    if (!tabList) {
+      if (retryCount < 10) {
+        setTimeout(() => injectSubmodulesTab(metaPR, repoFullName, prNumber, retryCount + 1), 300);
+      }
+      return;
+    }
 
     const childPRs = (metaPR && metaPR.child_prs) ? metaPR.child_prs : [];
 
@@ -314,7 +393,13 @@
 
     if (isGitLab) {
       subTab.className = 'nav-link';
-      subTab.innerHTML = `⚡ MetaStackr <span class="gl-badge badge badge-pill gl-tab-counter-badge sm ml-1">${childPRs.length}</span>`;
+      const sampleTab = tabList ? tabList.querySelector('a.nav-link, button.gl-tab-nav-item, li.nav-item a') : null;
+      if (sampleTab && sampleTab.className) {
+        subTab.className = sampleTab.className.replace(/\b(active|selected)\b/g, '').trim();
+      }
+
+      const badgeHtml = `<span class="gl-tab-counter-badge gl-badge badge badge-pill sm"><span class="gl-badge-content">${childPRs.length}</span></span>`;
+      subTab.innerHTML = `<span>MetaStackr</span> ${badgeHtml}`;
     } else {
       subTab.className = 'tabnav-tab js-pjax-history-navigate PullRequestHeaderTabNav-module__TabNavLink__JCc1O position-relative flex-shrink-0 text-normal PullRequestHeaderNavigation-module__overrideLineHeight__TeEsl';
       subTab.innerHTML = `
@@ -331,15 +416,6 @@
       li.className = 'nav-item metastackr-tab-li';
       li.appendChild(subTab);
       tabContainer = li;
-    }
-
-    let activeTabPollInterval = null;
-
-    function stopTabPolling() {
-      if (activeTabPollInterval) {
-        clearInterval(activeTabPollInterval);
-        activeTabPollInterval = null;
-      }
     }
 
     subTab.addEventListener('click', (e) => {
@@ -367,14 +443,13 @@
       showSubmodulesGrid(metaPR, metaPR ? metaPR.child_prs : [], repoFullName);
 
       // Re-fetch latest PR status on tab click
-      const prMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
-      if (prMatch) {
-        const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name, .source-branch');
-        const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
-        fetchPRStatus(repoFullName, prNumber, branchName, (latestPR) => {
+      const prInfo = getPRInfoFromURL();
+      if (prInfo) {
+        const branchName = getBranchName();
+        fetchPRStatus(prInfo.repoFullName, prInfo.prNumber, branchName, (latestPR) => {
           if (latestPR) {
             metaPR = latestPR;
-            showSubmodulesGrid(latestPR, latestPR.child_prs, repoFullName);
+            showSubmodulesGrid(latestPR, latestPR.child_prs, prInfo.repoFullName);
           }
         });
       }
@@ -386,14 +461,13 @@
           stopTabPolling();
           return;
         }
-        const prMatch = window.location.pathname.match(/^\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
-        if (prMatch) {
-          const headBranchEl = document.querySelector('.head-ref, span.commit-ref, a.commit-ref, [data-hovercard-type="commit"], .branch-name, .source-branch');
-          const branchName = headBranchEl ? headBranchEl.innerText.trim() : 'head';
-          fetchPRStatus(repoFullName, prNumber, branchName, (latestPR) => {
+        const prInfoPoll = getPRInfoFromURL();
+        if (prInfoPoll) {
+          const branchName = getBranchName();
+          fetchPRStatus(prInfoPoll.repoFullName, prInfoPoll.prNumber, branchName, (latestPR) => {
             if (latestPR) {
               metaPR = latestPR;
-              showSubmodulesGrid(latestPR, latestPR.child_prs, repoFullName);
+              showSubmodulesGrid(latestPR, latestPR.child_prs, prInfoPoll.repoFullName);
             }
           });
         }
@@ -406,8 +480,8 @@
   function showSubmodulesGrid(metaPR, childPRs, repoFullName) {
     document.body.classList.add('metastackr-active');
 
-    const targetRepo = (metaPR && metaPR.meta_repo_full_name) 
-      ? metaPR.meta_repo_full_name 
+    const targetRepo = (metaPR && metaPR.meta_repo_full_name)
+      ? metaPR.meta_repo_full_name
       : (repoFullName || (window.location.pathname.match(/^\/([^\/]+\/[^\/]+)/) || [])[1]);
 
     let container = document.getElementById('metastackr-submodules-panel');
@@ -426,25 +500,32 @@
     const sidebar = document.querySelector('.discussion-sidebar, #partial-discussion-sidebar, [data-component="sidebar"], .js-issue-sidebar, [class*="PageLayout-Sidebar"], aside.right-sidebar, .issuable-sidebar, [data-testid="issuable-sidebar"], .sidebar-wrapper-inner');
     if (sidebar) sidebar.style.display = 'none';
 
-    const tabsContainer = document.querySelector('.merge-request-tabs-container, .js-tabs-affix, .tabs-holder, .tabs-wrapper');
+    const tabsContainer = document.querySelector('.merge-request-tabs-container, .js-tabs-affix, .tabs-holder, .tabs-wrapper, .gl-tabs');
     if (tabsContainer && tabsContainer.parentNode) {
       if (container.parentNode !== tabsContainer.parentNode) {
         tabsContainer.parentNode.insertBefore(container, tabsContainer.nextSibling);
       }
     } else {
-      const tabList = document.querySelector(
+      let tabList = document.querySelector(
         '[class*="TabNavList"], nav[aria-label*="Pull request"] > div, nav[aria-label*="Pull request"] > ul, nav[aria-label*="Pull request navigation"] > div, nav[aria-label*="Pull request navigation"] > ul, .tabnav-tabs, ' +
-        'ul.mr-tabs, ul.nav-tabs, nav.tabs-wrapper, .merge-request-tabs, [data-testid="mr-tabs"], .gl-tabs-nav'
+        'ul.mr-tabs, ul.nav-tabs, nav.tabs-wrapper, .merge-request-tabs, [data-testid="mr-tabs"], .gl-tabs-nav, ul.gl-tabs-nav, [role="tablist"]'
       );
+      if (!tabList) {
+        const anyTabLink = document.querySelector('.notes-tab, .commits-tab, .pipelines-tab, .diffs-tab, .gl-tab-nav-item, a[href*="#notes"], a[href*="#diffs"]');
+        if (anyTabLink) {
+          tabList = anyTabLink.closest('ul, nav, [role="tablist"]') || anyTabLink.parentElement;
+        }
+      }
 
       if (tabList && tabList.parentNode) {
-        if (container.parentNode !== tabList.parentNode) {
-          tabList.parentNode.insertBefore(container, tabList.nextSibling);
+        const insertTarget = tabList.closest('.merge-request-tabs, .tabs-holder, .tabs-wrapper, .gl-tabs-nav, .nav-tabs, [role="tablist"]') || tabList;
+        if (insertTarget.parentNode && container.parentNode !== insertTarget.parentNode) {
+          insertTarget.parentNode.insertBefore(container, insertTarget.nextSibling);
         }
       } else {
         const contentArea = document.querySelector(
           '[class*="PageLayoutContent"], [class*="PageLayout-Content"], .diff-view, .js-diff-container, #files, #discussion_bucket, .js-pull-discussion-timeline, #commits_bucket, #checks_bucket, .Layout-main, ' +
-          '.merge-request-details, .issuable-details, .tab-content'
+          '.merge-request-details, .issuable-details, .tab-content, #content-body, .content-wrapper'
         );
         if (contentArea && container.parentNode !== contentArea) {
           contentArea.appendChild(container);
@@ -452,20 +533,32 @@
       }
     }
 
+    const list = (childPRs && childPRs.length > 0)
+      ? childPRs
+      : (metaPR ? (metaPR.child_prs || metaPR.childPRs || []) : []);
+
     let rowsHtml = '';
-    (childPRs || []).forEach(child => {
-      const shaStr = child.head_sha ? child.head_sha.substring(0, 7) : 'head';
-      const childPRUrl = getPRUrl(child.repo_full_name, child.pr_number);
+    (list || []).forEach(child => {
+      const path = child.submodule_path || child.submodulePath || child.path || child.SubmodulePath || '';
+      const repo = child.repo_full_name || child.repoFullName || child.repo || child.RepoFullName || '';
+      const prNum = child.pr_number || child.prNumber || child.mr_number || child.pr || child.PRNumber || 0;
+      const headSha = child.head_sha || child.headSha || child.sha || child.HeadSHA || '';
+      const shaStr = headSha ? headSha.substring(0, 7) : 'head';
+      const status = child.status || child.Status || 'OPEN';
+      const childPRUrl = getPRUrl(repo, prNum);
+
       rowsHtml += `
         <div class="metastackr-grid-row">
-          <div class="col-path"><code>${child.submodule_path}</code></div>
-          <div class="col-repo">${child.repo_full_name}</div>
-          <div class="col-pr"><a href="${childPRUrl}">#${child.pr_number}</a></div>
+          <div class="col-path"><code>${path}</code></div>
+          <div class="col-repo">${repo}</div>
+          <div class="col-pr"><a href="${childPRUrl}">#${prNum}</a></div>
           <div class="col-sha"><code>${shaStr}</code></div>
-          <div class="col-status"><span class="status-badge state-${(child.status || 'open').toLowerCase()}">${child.status || 'OPEN'}</span></div>
+          <div class="col-status"><span class="status-badge state-${status.toLowerCase()}">${status}</span></div>
         </div>
       `;
     });
+
+    const emptyMessage = '<div class="metastackr-empty">No child submodules tracked for this branch.<br><span style="font-size: 11px; opacity: 0.8; margin-top: 4px; display: inline-block;">Run <code>git meta push</code> and <code>git meta create-pr</code> to create &amp; sync submodule Merge Requests.</span></div>';
 
     if (isAlreadyRendered) {
       // Surgical update of matrix grid without destroying settings panel state
@@ -479,17 +572,17 @@
             <div class="col-sha">Commit SHA</div>
             <div class="col-status">Merge Status</div>
           </div>
-          ${rowsHtml || '<div class="metastackr-empty">No child submodules tracked for this branch</div>'}
+          ${rowsHtml || emptyMessage}
         `;
       }
       const statusBadge = container.querySelector('.metastackr-title-group .status-badge');
       if (statusBadge) {
-        statusBadge.className = `status-badge state-${(metaPR.status || 'open').toLowerCase()}`;
-        statusBadge.innerText = metaPR.status || 'OPEN';
+        statusBadge.className = `status-badge state-${(metaPR ? (metaPR.status || 'open') : 'open').toLowerCase()}`;
+        statusBadge.innerText = metaPR ? (metaPR.status || 'Open') : 'Open';
       }
       const lockBadge = container.querySelector('.metastackr-badge-muted');
       if (lockBadge) {
-        lockBadge.innerText = `Lock Version ${metaPR.lock_version || 1}`;
+        lockBadge.innerText = `Lock Version ${metaPR ? (metaPR.lock_version || 1) : 1}`;
       }
       container.style.display = 'block';
       return;
@@ -506,9 +599,9 @@
               </svg>
               Submodule Synchronization Matrix
             </h3>
-            <span class="status-badge state-${(metaPR.status || 'open').toLowerCase()}">${metaPR.status || 'OPEN'}</span>
+            <span class="status-badge state-${(metaPR ? (metaPR.status || 'open') : 'open').toLowerCase()}">${metaPR ? (metaPR.status || 'Open') : 'Open'}</span>
           </div>
-          <span class="metastackr-badge-muted">Lock Version ${metaPR.lock_version || 1}</span>
+          <span class="metastackr-badge-muted">Lock Version ${metaPR ? (metaPR.lock_version || 1) : 1}</span>
         </div>
         <div class="metastackr-grid">
           <div class="metastackr-grid-header">
@@ -518,7 +611,7 @@
             <div class="col-sha">Commit SHA</div>
             <div class="col-status">Merge Status</div>
           </div>
-          ${rowsHtml || '<div class="metastackr-empty">No child submodules tracked for this branch</div>'}
+          ${rowsHtml || emptyMessage}
         </div>
       </div>
 
@@ -596,7 +689,7 @@
 
     const saveBtn = document.getElementById('metastackr-save-settings-btn');
     if (saveBtn) {
-      saveBtn.onclick = function(e) {
+      saveBtn.onclick = function (e) {
         if (e) {
           e.preventDefault();
           e.stopPropagation();
@@ -628,25 +721,25 @@
             default_merge_method: mergeMethod
           })
         })
-        .then(res => res.json())
-        .then(data => {
-          if (statusEl) {
-            if (data && data.success) {
-              statusEl.innerText = '✅ Saved successfully!';
-              statusEl.style.color = 'var(--ms-state-merged-fg, #1a7f37)';
-              setTimeout(() => { statusEl.innerText = ''; }, 3000);
-            } else {
-              statusEl.innerText = '❌ Failed to save settings';
+          .then(res => res.json())
+          .then(data => {
+            if (statusEl) {
+              if (data && data.success) {
+                statusEl.innerText = '✅ Saved successfully!';
+                statusEl.style.color = 'var(--ms-state-merged-fg, #1a7f37)';
+                setTimeout(() => { statusEl.innerText = ''; }, 3000);
+              } else {
+                statusEl.innerText = '❌ Failed to save settings';
+                statusEl.style.color = 'var(--ms-state-failed-fg, #cf222e)';
+              }
+            }
+          })
+          .catch(err => {
+            if (statusEl) {
+              statusEl.innerText = `❌ Error: ${err.message}`;
               statusEl.style.color = 'var(--ms-state-failed-fg, #cf222e)';
             }
-          }
-        })
-        .catch(err => {
-          if (statusEl) {
-            statusEl.innerText = `❌ Error: ${err.message}`;
-            statusEl.style.color = 'var(--ms-state-failed-fg, #cf222e)';
-          }
-        });
+          });
       };
     }
   }
@@ -657,7 +750,7 @@
     const sidebar = document.querySelector('.discussion-sidebar, #partial-discussion-sidebar, [data-component="sidebar"], .js-issue-sidebar');
     if (!sidebar) return;
 
-    const status = (metaPR.status || 'OPEN').toUpperCase();
+    const status = (metaPR.status || 'Open').toUpperCase();
     const isFailed = status === 'FAILED' || status === 'FAILED_PARTIAL';
     const isMerged = status === 'MERGED';
 
@@ -705,18 +798,18 @@
             pr_number: prNumber
           })
         })
-        .then(res => {
-          if (res.ok) {
-            mergeBtn.innerText = 'Merge Queued';
-          } else {
-            mergeBtn.innerText = 'Retry Failed';
+          .then(res => {
+            if (res.ok) {
+              mergeBtn.innerText = 'Merge Queued';
+            } else {
+              mergeBtn.innerText = 'Retry Failed';
+              mergeBtn.disabled = false;
+            }
+          })
+          .catch(() => {
+            mergeBtn.innerText = 'Error Connection';
             mergeBtn.disabled = false;
-          }
-        })
-        .catch(() => {
-          mergeBtn.innerText = 'Error Connection';
-          mergeBtn.disabled = false;
-        });
+          });
       });
     }
   }

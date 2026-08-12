@@ -15,8 +15,7 @@
     {
       "matches": [
         "https://github.com/*/*/pull/*",
-        "https://gitlab.com/*/*/merge_requests/*",
-        "https://gitlab.com/*/*/-/merge_requests/*"
+        "https://gitlab.com/*"
       ],
       "js": [
         "content.js"

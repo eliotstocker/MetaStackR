@@ -26,6 +26,10 @@
 [data-color-mode="dark"],
 [data-dark-theme],
 .dark,
+.gl-dark,
+[data-theme="dark"],
+[data-color-scheme="dark"],
+[data-user-color-scheme="dark"],
 html[data-color-mode="dark"] {
   --ms-bg-default: var(--bgColor-default, var(--color-canvas-default, #0d1117));
   --ms-bg-subtle: var(--bgColor-muted, var(--color-canvas-subtle, #161b22));
@@ -390,6 +394,83 @@ html[data-color-mode="dark"] {
 .metastackr-gitlab {
   --ms-font-family: -apple-system, BlinkMacSystemFont, "GitLab Sans", "Segoe UI", Roboto, "Noto Sans", Ubuntu, sans-serif;
   --ms-mono-font: "GitLab Mono", "JetBrains Mono", "Menlo", "DejaVu Sans Mono", Consolas, monospace;
+
+  --ms-bg-default: var(--gl-background-color-default, var(--gl-bg-default, #ffffff));
+  --ms-bg-subtle: var(--gl-background-color-subtle, var(--gl-bg-subtle, var(--gl-header-bg, #fafafa)));
+  --ms-fg-default: var(--gl-text-color-default, var(--gl-text-color, #28272d));
+  --ms-fg-muted: var(--gl-text-color-subtle, var(--gl-text-color-secondary, #666668));
+  --ms-fg-accent: var(--gl-text-color-link, #1070ca);
+  --ms-border-default: var(--gl-border-color-default, var(--gl-border-color, #e5e5e5));
+  --ms-border-muted: var(--gl-border-color-subtle, var(--gl-border-color, #ececec));
+  --ms-neutral-muted: var(--gl-control-bg-color-default, rgba(127, 127, 127, 0.15));
+
+  --ms-state-open-bg: #cbe2d6;
+  --ms-state-open-fg: #0d5e33;
+  --ms-state-open-border: #108548;
+
+  --ms-state-merged-bg: #e1d8f5;
+  --ms-state-merged-fg: #4d329a;
+  --ms-state-merged-border: #6b4fbb;
+
+  --ms-state-failed-bg: #fcd0cc;
+  --ms-state-failed-fg: #9d1c09;
+  --ms-state-failed-border: #dd2b0e;
+}
+
+.gl-dark .metastackr-gitlab,
+html.gl-dark .metastackr-gitlab,
+body.gl-dark .metastackr-gitlab,
+[data-theme="dark"] .metastackr-gitlab,
+[data-color-scheme="dark"] .metastackr-gitlab,
+[data-user-color-scheme="dark"] .metastackr-gitlab,
+[data-color-mode="dark"] .metastackr-gitlab,
+.dark .metastackr-gitlab,
+.metastackr-gitlab.gl-dark {
+  --ms-bg-default: var(--gl-background-color-default, var(--gl-bg-default, #18171d));
+  --ms-bg-subtle: var(--gl-background-color-subtle, var(--gl-bg-subtle, var(--gl-header-bg, #212027)));
+  --ms-fg-default: var(--gl-text-color-default, var(--gl-text-color, #ececef));
+  --ms-fg-muted: var(--gl-text-color-subtle, var(--gl-text-color-secondary, #89888d));
+  --ms-fg-accent: var(--gl-text-color-link, #66a3ff);
+  --ms-border-default: var(--gl-border-color-default, var(--gl-border-color, #34323a));
+  --ms-border-muted: var(--gl-border-color-subtle, var(--gl-border-color, #28272d));
+  --ms-neutral-muted: var(--gl-control-bg-color-default, rgba(255, 255, 255, 0.08));
+
+  --ms-state-open-bg: rgba(16, 133, 72, 0.25);
+  --ms-state-open-fg: #30b661;
+  --ms-state-open-border: #108548;
+
+  --ms-state-merged-bg: rgba(107, 79, 187, 0.25);
+  --ms-state-merged-fg: #a280ff;
+  --ms-state-merged-border: #6b4fbb;
+
+  --ms-state-failed-bg: rgba(221, 43, 14, 0.25);
+  --ms-state-failed-fg: #f97368;
+  --ms-state-failed-border: #dd2b0e;
+}
+
+@media (prefers-color-scheme: dark) {
+  .metastackr-gitlab:not([data-theme="light"]):not([data-color-scheme="light"]) {
+    --ms-bg-default: var(--gl-background-color-default, var(--gl-bg-default, #18171d));
+    --ms-bg-subtle: var(--gl-background-color-subtle, var(--gl-bg-subtle, var(--gl-header-bg, #212027)));
+    --ms-fg-default: var(--gl-text-color-default, var(--gl-text-color, #ececef));
+    --ms-fg-muted: var(--gl-text-color-subtle, var(--gl-text-color-secondary, #89888d));
+    --ms-fg-accent: var(--gl-text-color-link, #66a3ff);
+    --ms-border-default: var(--gl-border-color-default, var(--gl-border-color, #34323a));
+    --ms-border-muted: var(--gl-border-color-subtle, var(--gl-border-color, #28272d));
+    --ms-neutral-muted: var(--gl-control-bg-color-default, rgba(255, 255, 255, 0.08));
+
+    --ms-state-open-bg: rgba(16, 133, 72, 0.25);
+    --ms-state-open-fg: #30b661;
+    --ms-state-open-border: #108548;
+
+    --ms-state-merged-bg: rgba(107, 79, 187, 0.25);
+    --ms-state-merged-fg: #a280ff;
+    --ms-state-merged-border: #6b4fbb;
+
+    --ms-state-failed-bg: rgba(221, 43, 14, 0.25);
+    --ms-state-failed-fg: #f97368;
+    --ms-state-failed-border: #dd2b0e;
+  }
 }
 
 .metastackr-gitlab #metastackr-child-pr-banner,
@@ -401,27 +482,28 @@ html[data-color-mode="dark"] {
 }
 
 .metastackr-gitlab .metastackr-box {
-  border-radius: 4px;
-  border-color: var(--gl-border-color, #e5e5e5);
+  border-radius: 10px;
+  background: var(--gl-background-color-subtle);
+  border: none;
 }
 
 .metastackr-gitlab .metastackr-box-header {
-  background: var(--gl-header-bg, #fafafa);
-  border-bottom-color: var(--gl-border-color, #e5e5e5);
+  background: var(--gl-background-color-section);
+  border: none;
 }
 
 .metastackr-gitlab .metastackr-grid-header {
-  background: var(--gl-header-bg, #fafafa);
-  border-bottom-color: var(--gl-border-color, #e5e5e5);
+  background: var(--gl-background-color-section);
   font-family: var(--ms-font-family);
+  border: none;
 }
 
 /* GitLab Pajamas Buttons */
 .metastackr-gitlab .btn-primary,
 .metastackr-gitlab .btn-block {
-  background-color: #1070ca;
-  border-color: #1070ca;
-  color: #ffffff;
+  background-color: var(--gl-button-primary-background-color, #1070ca);
+  border-color: var(--gl-button-primary-border-color, #1070ca);
+  color: var(--gl-button-primary-text-color, #ffffff);
   border-radius: 4px;
   font-weight: 600;
   font-size: 13px;
@@ -432,40 +514,73 @@ html[data-color-mode="dark"] {
 
 .metastackr-gitlab .btn-primary:hover,
 .metastackr-gitlab .btn-block:hover {
-  background-color: #0b5394;
-  border-color: #0b5394;
+  background-color: var(--gl-button-primary-hover-background-color, #0b5394);
+  border-color: var(--gl-button-primary-hover-border-color, #0b5394);
   color: #ffffff;
 }
 
 /* GitLab Pajamas Status Badges */
 .metastackr-gitlab .state-open {
-  background-color: #cbe2d6;
-  color: #0d5e33;
-  border: 1px solid #108548;
+  background-color: var(--gl-badge-success-background-color-default);
+  color: var(--gl-badge-success-text-color-default);
+  border: none;
   border-radius: 12px;
   font-weight: 600;
+  text-transform: capitalize;
 }
 
 .metastackr-gitlab .state-merged {
-  background-color: #e1d8f5;
-  color: #4d329a;
-  border: 1px solid #6b4fbb;
+  background-color: var(--gl-badge-tier-background-color-default);
+  color: var(--gl-badge-tier-text-color-default);
+  border: none;
   border-radius: 12px;
   font-weight: 600;
+  text-transform: capitalize;
 }
 
 .metastackr-gitlab .state-failed {
-  background-color: #fcd0cc;
-  color: #9d1c09;
-  border: 1px solid #dd2b0e;
+  background-color: var(--gl-badge-danger-background-color-default);
+  color: var(--gl-badge-danger-text-color-default);
+  border: none;
   border-radius: 12px;
   font-weight: 600;
+  text-transform: capitalize;
 }
 
 /* GitLab Pajamas Code font */
 .metastackr-gitlab code {
   font-family: var(--ms-mono-font);
   border-radius: 3px;
+}
+
+/* Tab Counter Badge - Circle/Pill Background */
+#metastackr-submodules-tab .gl-tab-counter-badge,
+#metastackr-submodules-tab .gl-badge,
+#metastackr-submodules-tab .badge,
+#metastackr-submodules-tab .Counter,
+#metastackr-submodules-tab [data-component="CounterLabel"] {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 20px !important;
+  height: 20px !important;
+  padding: 0 6px !important;
+  border-radius: 9999px !important;
+  background-color: var(--gl-badge-neutral-background-color-default) !important;
+  color: var(--gl-badge-neutral-text-color-default) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  margin-left: 6px !important;
+  box-sizing: border-box !important;
+  vertical-align: middle !important;
+}
+
+#metastackr-submodules-tab .gl-badge-content {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
 }
 
 /* ==========================================
@@ -479,8 +594,7 @@ html[data-color-mode="dark"] {
   display: block !important;
 }
 
-.metastackr-active .issuable-discussion,
-.metastackr-active .tab-content,
+.metastackr-active .tab-pane:not(#metastackr-submodules-panel),
 .metastackr-active #notes,
 .metastackr-active .mr-state-widget,
 .metastackr-active .mr-widget-border,

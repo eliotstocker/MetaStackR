@@ -117,6 +117,12 @@ func (r *Repository) UpdateTrackedRepoVCSToken(ctx context.Context, repoFullName
 	return err
 }
 
+func (r *Repository) UpdateGitLabVCSTokenForOwner(ctx context.Context, owner string, token string) error {
+	query := `UPDATE tracked_meta_repos SET vcs_token = $1 WHERE (repo_owner = $2 OR repo_full_name LIKE $3 OR vcs_provider = 'gitlab')`
+	_, err := r.db.ExecContext(ctx, query, token, owner, owner+"/%")
+	return err
+}
+
 func (r *Repository) UpdateTrackedRepoSettings(ctx context.Context, repoFullName string, requireRootApproval bool, autoMergeEnabled bool, requiredChecks []string, defaultMergeMethod string, submoduleChangesOnly bool, vcsToken string, vcsProvider string) error {
 	reqChecksJSON, _ := json.Marshal(requiredChecks)
 	if len(requiredChecks) == 0 {

@@ -50,9 +50,16 @@ func (s *Server) VCSForRepo(ctx context.Context, repoFullName string) vcs.VCSPro
 	if s.repo != nil && repoFullName != "" {
 		if tracked, err := s.repo.GetTrackedRepoByFullName(ctx, repoFullName); err == nil && tracked != nil {
 			if tracked.VCSProvider == "gitlab" {
-				return NewGitLabClient("", tracked.VCSToken)
+				token := tracked.VCSToken
+				if token == "" {
+					token = os.Getenv("GITLAB_TOKEN")
+				}
+				return NewGitLabClient("", token)
 			}
 		}
+	}
+	if strings.Contains(strings.ToLower(repoFullName), "gitlab") {
+		return NewGitLabClient("", os.Getenv("GITLAB_TOKEN"))
 	}
 	return s.VCS()
 }
@@ -311,6 +318,10 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 		// Attempt fallback by matching branch name across tracked Meta PRs
 		metaPR, _ := s.repo.GetMetaPRByAnyBranch(ctx, evt.BranchName)
 		if metaPR != nil {
+			initStatus := "OPEN"
+			if evt.Merged || evt.EventType == EventTypePRMerged {
+				initStatus = "MERGED"
+			}
 			child = &db.ChildPR{
 				ID:            uuid.New(),
 				MetaPRID:      metaPR.ID,
@@ -318,7 +329,7 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 				RepoFullName:  evt.Repo,
 				PRNumber:      evt.PRNumber,
 				HeadSHA:       evt.MergedSHA,
-				Status:        "OPEN",
+				Status:        initStatus,
 			}
 			_ = s.repo.UpsertChildPR(ctx, child)
 		}
@@ -564,6 +575,43 @@ func (s *Server) handlePRStatusQuery(w http.ResponseWriter, r *http.Request) {
 
 	if tracked, trackedErr := s.repo.GetTrackedRepoByID(r.Context(), metaPR.MetaRepoID); trackedErr == nil && tracked != nil {
 		metaPR.MetaRepoFullName = tracked.RepoFullName
+		if len(metaPR.ChildPRs) == 0 {
+			evt := &NormalizedEvent{
+				Repo:           tracked.RepoFullName,
+				PRNumber:       metaPR.PRNumber,
+				BranchName:     metaPR.BranchName,
+				InstallationID: tracked.InstallationID,
+			}
+			s.autoSynthesizeChildPRs(r.Context(), metaPR, evt)
+			if updatedChildren, err := s.repo.GetChildPRsByMetaPRID(r.Context(), metaPR.ID); err == nil && len(updatedChildren) > 0 {
+				metaPR.ChildPRs = updatedChildren
+			}
+		} else {
+			hasChanged := false
+			for i, child := range metaPR.ChildPRs {
+				if child.Status == "OPEN" && child.PRNumber > 0 {
+					childVCS := s.VCSForRepo(r.Context(), child.RepoFullName)
+					if childVCS != nil {
+						instID := resolveInstallationID(0, tracked.InstallationID)
+						_, _, merged, err := childVCS.GetOpenPRForBranch(r.Context(), child.RepoFullName, metaPR.BranchName, instID)
+						if err == nil && merged {
+							metaPR.ChildPRs[i].Status = "MERGED"
+							_ = s.repo.UpdateChildPRStatus(r.Context(), child.ID, "MERGED", child.HeadSHA)
+							hasChanged = true
+						}
+					}
+				}
+			}
+		vcsClient := s.VCSForRepo(r.Context(), tracked.RepoFullName)
+		if vcsClient != nil {
+			instID := resolveInstallationID(0, tracked.InstallationID)
+			if metaPR.HeadSHA != "" {
+				_ = vcsClient.UpdateMetaCheckRun(r.Context(), tracked.RepoFullName, metaPR.HeadSHA, metaPR, instID)
+			}
+			if metaPR.PRNumber > 0 {
+				_ = vcsClient.EnsureRootPRComment(r.Context(), tracked.RepoFullName, metaPR.PRNumber, metaPR, instID)
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -625,6 +673,7 @@ type trackRepoRequest struct {
 	FullName      string `json:"full_name"`
 	AllowCodePull bool   `json:"allow_code_pull"`
 	VCSProvider   string `json:"vcs_provider"`
+	VCSToken      string `json:"vcs_token"`
 }
 
 func (s *Server) handleTrackRepo(w http.ResponseWriter, r *http.Request) {
@@ -643,8 +692,12 @@ func (s *Server) handleTrackRepo(w http.ResponseWriter, r *http.Request) {
 	owner, name := parts[0], parts[1]
 
 	vcsProv := req.VCSProvider
-	if vcsProv == "" {
-		vcsProv = "github"
+	if vcsProv == "" || vcsProv == "unknown" {
+		if strings.Contains(strings.ToLower(req.FullName), "gitlab") {
+			vcsProv = "gitlab"
+		} else {
+			vcsProv = "github"
+		}
 	}
 
 	tracked := &db.TrackedMetaRepo{
@@ -654,6 +707,7 @@ func (s *Server) handleTrackRepo(w http.ResponseWriter, r *http.Request) {
 		IsEnabled:      true,
 		AllowCodePull:  req.AllowCodePull,
 		VCSProvider:    vcsProv,
+		VCSToken:       req.VCSToken,
 	}
 
 	if err := s.repo.CreateTrackedRepo(r.Context(), tracked); err != nil {
@@ -854,7 +908,16 @@ func (s *Server) handleGitLabOAuthCallback(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// 3. Return JSON or HTML confirmation page
+	// 3. Save OAuth Access Token to tracked GitLab repositories for this user
+	if s.repo != nil && tokenData.AccessToken != "" {
+		owner := glUser.Username
+		if owner == "" {
+			owner = "eliotstocker"
+		}
+		_ = s.repo.UpdateGitLabVCSTokenForOwner(r.Context(), owner, tokenData.AccessToken)
+	}
+
+	// 4. Return JSON or HTML confirmation page
 	if strings.Contains(r.Header.Get("Accept"), "application/json") || r.URL.Query().Get("json") == "true" {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
