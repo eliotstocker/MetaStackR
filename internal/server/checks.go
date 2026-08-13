@@ -309,7 +309,11 @@ func GenerateMarkdownTable(metaPR *db.MetaPR) (title string, summary string, tex
 		for _, child := range metaPR.ChildPRs {
 			prLink := fmt.Sprintf("#%d", child.PRNumber)
 			if child.PRNumber > 0 {
-				prLink = fmt.Sprintf("[%d](https://github.com/%s/pull/%d)", child.PRNumber, child.RepoFullName, child.PRNumber)
+				if strings.Contains(strings.ToLower(child.RepoFullName), "gitlab") || strings.Contains(strings.ToLower(metaPR.MetaRepoFullName), "gitlab") {
+					prLink = fmt.Sprintf("[%d](https://gitlab.com/%s/-/merge_requests/%d)", child.PRNumber, child.RepoFullName, child.PRNumber)
+				} else {
+					prLink = fmt.Sprintf("[%d](https://github.com/%s/pull/%d)", child.PRNumber, child.RepoFullName, child.PRNumber)
+				}
 			}
 
 			shaStr := child.HeadSHA

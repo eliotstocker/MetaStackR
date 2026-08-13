@@ -266,7 +266,7 @@ func (c *GitLabClient) EnsureRootPRComment(ctx context.Context, repoFullName str
 		return nil
 	}
 
-	body, _, _ := GenerateMarkdownTable(metaPR)
+	_, _, body := GenerateMarkdownTable(metaPR)
 
 	// 1. Fetch existing notes on the MR to see if MetaStackr note already exists
 	listURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes?per_page=100", c.baseURL, c.projectIDOrPath(repoFullName), prNumber)
