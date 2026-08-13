@@ -1,3 +1,15 @@
+# [1.4.0](https://github.com/eliotstocker/MetaStackR/compare/core-v1.3.0...core-v1.4.0) (2026-08-13)
+
+
+### Bug Fixes
+
+* **extension:** restore matrix table structure and apply screenshot style guide strictly to popped-out policy card ([fed2f83](https://github.com/eliotstocker/MetaStackR/commit/fed2f83dad9a97c48d44e20fef4b6ef9d3f81209))
+
+
+### Features
+
+* **gitlab:** update auto-merge policy widget to match GitLab native style and enforce MR terminology across GitLab platform ([e84b5ea](https://github.com/eliotstocker/MetaStackR/commit/e84b5ea31797e2da68bd5f599db8d48256422818))
+
 # [1.3.0](https://github.com/eliotstocker/MetaStackR/compare/core-v1.2.1...core-v1.3.0) (2026-08-13)
 
 
