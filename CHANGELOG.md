@@ -1,3 +1,10 @@
+## [1.4.3](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.2...core-v1.4.3) (2026-08-13)
+
+
+### Bug Fixes
+
+* **gitlab:** overwrite initial comment and purge duplicate comments on merge requests ([704dad1](https://github.com/eliotstocker/MetaStackR/commit/704dad19fe3914f1defa6200d96a0dff23f99fe6))
+
 ## [1.4.2](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.1...core-v1.4.2) (2026-08-13)
 
 
