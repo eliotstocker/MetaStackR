@@ -134,6 +134,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	handleWithCORS("GET /oauth/gitlab/callback", s.handleGitLabOAuthCallback)
 	handleWithCORS("OPTIONS /oauth/gitlab/callback", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("GET /oauth/gitlab/login", s.handleGitLabOAuthLogin)
+	handleWithCORS("/oauth/gitlab/login", s.handleGitLabOAuthLogin)
 	handleWithCORS("OPTIONS /oauth/gitlab/login", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("GET /api/v1/prs/status", s.handlePRStatusQuery)
 	handleWithCORS("OPTIONS /api/v1/prs/status", func(w http.ResponseWriter, r *http.Request) {})
