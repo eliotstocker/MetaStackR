@@ -117,6 +117,31 @@ func (r *Repository) UpdateTrackedRepoVCSToken(ctx context.Context, repoFullName
 	return err
 }
 
+func (r *Repository) SaveUserVCSToken(ctx context.Context, vcsProvider, username, accessToken, refreshToken string) error {
+	query := `
+		INSERT INTO user_vcs_tokens (vcs_provider, username, access_token, refresh_token, updated_at)
+		VALUES ($1, $2, $3, $4, NOW())
+		ON CONFLICT (vcs_provider, username)
+		DO UPDATE SET access_token = EXCLUDED.access_token, refresh_token = EXCLUDED.refresh_token, updated_at = NOW()
+	`
+	_, err := r.db.ExecContext(ctx, query, vcsProvider, username, accessToken, refreshToken)
+	if err != nil {
+		return err
+	}
+	_ = r.UpdateGitLabVCSTokenForOwner(ctx, username, accessToken)
+	return nil
+}
+
+func (r *Repository) GetUserVCSToken(ctx context.Context, vcsProvider, username string) (string, error) {
+	query := `SELECT access_token FROM user_vcs_tokens WHERE vcs_provider = $1 AND username = $2`
+	var token string
+	err := r.db.QueryRowContext(ctx, query, vcsProvider, username).Scan(&token)
+	if err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
 func (r *Repository) UpdateGitLabVCSTokenForOwner(ctx context.Context, owner string, token string) error {
 	query := `UPDATE tracked_meta_repos SET vcs_token = $1 WHERE (repo_owner = $2 OR repo_full_name LIKE $3 OR vcs_provider = 'gitlab')`
 	_, err := r.db.ExecContext(ctx, query, token, owner, owner+"/%")

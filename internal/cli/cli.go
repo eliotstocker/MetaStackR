@@ -1232,18 +1232,10 @@ func newInitCmd() *cobra.Command {
 				fmt.Printf("1. Registering repository '%s' (%s) with MetaStackr server at %s...\n", repoName, vcsProvider, serverURL)
 			}
 
-			gitlabToken := os.Getenv("GITLAB_TOKEN")
-			if gitlabToken == "" {
-				if tok, err := gitutils.ExecGit(cwd, "config", "--get", "metastackr.gitlab-token"); err == nil {
-					gitlabToken = strings.TrimSpace(tok)
-				}
-			}
-
 			trackPayload := map[string]interface{}{
 				"full_name":       repoName,
 				"allow_code_pull": allowCodePull,
 				"vcs_provider":    vcsProvider,
-				"vcs_token":       gitlabToken,
 			}
 			trackBytes, err := json.Marshal(trackPayload)
 			if err != nil {

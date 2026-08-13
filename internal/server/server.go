@@ -51,6 +51,15 @@ func (s *Server) VCSForRepo(ctx context.Context, repoFullName string) vcs.VCSPro
 		if tracked, err := s.repo.GetTrackedRepoByFullName(ctx, repoFullName); err == nil && tracked != nil {
 			if tracked.VCSProvider == "gitlab" {
 				token := tracked.VCSToken
+				if token == "" && tracked.RepoOwner != "" {
+					token, _ = s.repo.GetUserVCSToken(ctx, "gitlab", tracked.RepoOwner)
+				}
+				if token == "" {
+					parts := strings.Split(repoFullName, "/")
+					if len(parts) > 1 {
+						token, _ = s.repo.GetUserVCSToken(ctx, "gitlab", parts[0])
+					}
+				}
 				if token == "" {
 					token = os.Getenv("GITLAB_TOKEN")
 				}
@@ -59,7 +68,15 @@ func (s *Server) VCSForRepo(ctx context.Context, repoFullName string) vcs.VCSPro
 		}
 	}
 	if strings.Contains(strings.ToLower(repoFullName), "gitlab") {
-		return NewGitLabClient("", os.Getenv("GITLAB_TOKEN"))
+		token := ""
+		parts := strings.Split(repoFullName, "/")
+		if len(parts) > 0 && s.repo != nil {
+			token, _ = s.repo.GetUserVCSToken(ctx, "gitlab", parts[0])
+		}
+		if token == "" {
+			token = os.Getenv("GITLAB_TOKEN")
+		}
+		return NewGitLabClient("", token)
 	}
 	return s.VCS()
 }
@@ -700,6 +717,13 @@ func (s *Server) handleTrackRepo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	vcsToken := req.VCSToken
+	if vcsToken == "" && s.repo != nil {
+		if userTok, err := s.repo.GetUserVCSToken(r.Context(), vcsProv, owner); err == nil && userTok != "" {
+			vcsToken = userTok
+		}
+	}
+
 	tracked := &db.TrackedMetaRepo{
 		RepoOwner:     owner,
 		RepoName:      name,
@@ -707,7 +731,7 @@ func (s *Server) handleTrackRepo(w http.ResponseWriter, r *http.Request) {
 		IsEnabled:      true,
 		AllowCodePull:  req.AllowCodePull,
 		VCSProvider:    vcsProv,
-		VCSToken:       req.VCSToken,
+		VCSToken:       vcsToken,
 	}
 
 	if err := s.repo.CreateTrackedRepo(r.Context(), tracked); err != nil {
@@ -908,13 +932,13 @@ func (s *Server) handleGitLabOAuthCallback(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// 3. Save OAuth Access Token to tracked GitLab repositories for this user
+	// 3. Save OAuth Access Token to user_vcs_tokens database table for this user
 	if s.repo != nil && tokenData.AccessToken != "" {
-		owner := glUser.Username
-		if owner == "" {
-			owner = "eliotstocker"
+		username := glUser.Username
+		if username == "" {
+			username = "eliotstocker"
 		}
-		_ = s.repo.UpdateGitLabVCSTokenForOwner(r.Context(), owner, tokenData.AccessToken)
+		_ = s.repo.SaveUserVCSToken(r.Context(), "gitlab", username, tokenData.AccessToken, tokenData.RefreshToken)
 	}
 
 	// 4. Return JSON or HTML confirmation page
