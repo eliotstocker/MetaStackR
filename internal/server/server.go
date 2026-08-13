@@ -74,6 +74,8 @@ func (s *Server) getOrRefreshUserGitLabToken(ctx context.Context, username strin
 		if err == nil && newAccess != "" {
 			_ = s.repo.SaveUserVCSToken(ctx, "gitlab", username, newAccess, newRefresh)
 			return newAccess, nil
+		} else if err != nil {
+			log.Printf("[oauth] Failed to refresh GitLab token for %s: %v", username, err)
 		}
 	}
 
@@ -84,7 +86,12 @@ func (s *Server) VCSForRepo(ctx context.Context, repoFullName string) vcs.VCSPro
 	if s.repo != nil && repoFullName != "" {
 		if tracked, err := s.repo.GetTrackedRepoByFullName(ctx, repoFullName); err == nil && tracked != nil {
 			if tracked.VCSProvider == "gitlab" {
-				token := tracked.VCSToken
+				token := ""
+				// If a static Personal Access Token (glpat-) is explicitly configured on the repo, use it directly
+				if strings.HasPrefix(tracked.VCSToken, "glpat-") {
+					token = tracked.VCSToken
+				}
+				// Otherwise, fetch or refresh the user's OAuth access token
 				if token == "" && tracked.RepoOwner != "" {
 					token, _ = s.getOrRefreshUserGitLabToken(ctx, tracked.RepoOwner)
 				}
@@ -93,6 +100,10 @@ func (s *Server) VCSForRepo(ctx context.Context, repoFullName string) vcs.VCSPro
 					if len(parts) > 1 {
 						token, _ = s.getOrRefreshUserGitLabToken(ctx, parts[0])
 					}
+				}
+				// Fallback to static tracked.VCSToken if OAuth token wasn't found
+				if token == "" && tracked.VCSToken != "" {
+					token = tracked.VCSToken
 				}
 				if token == "" {
 					token = os.Getenv("GITLAB_TOKEN")

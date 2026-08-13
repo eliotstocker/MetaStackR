@@ -97,3 +97,11 @@ func TestGitLabClient_UpdateSubmodulePointersOnBranch(t *testing.T) {
 		}
 	}
 }
+
+func TestRefreshGitLabToken(t *testing.T) {
+	// Test missing params error handling
+	_, _, err := RefreshGitLabToken(context.Background(), "", "", "")
+	if err == nil {
+		t.Fatal("expected error with empty params")
+	}
+}
