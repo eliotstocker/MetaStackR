@@ -221,21 +221,26 @@ func (c *GitLabClient) UpdateMetaCheckRun(ctx context.Context, repoFullName stri
 		switch metaPR.Status {
 		case "MERGED":
 			state = "success"
-			description = "Submodule cascade merge completed"
+			description = "All submodule PRs merged cleanly"
 		case "FAILED_DRIFT", "FAILED_PARTIAL":
 			state = "failed"
 			description = "Submodule synchronization failed"
 		default:
-			allChildrenMerged := true
+			mergedCount := 0
+			openCount := 0
 			for _, child := range metaPR.ChildPRs {
-				if child.Status != "MERGED" {
-					allChildrenMerged = false
-					break
+				if child.Status == "MERGED" {
+					mergedCount++
+				} else {
+					openCount++
 				}
 			}
-			if allChildrenMerged && len(metaPR.ChildPRs) > 0 {
+			if mergedCount == len(metaPR.ChildPRs) && len(metaPR.ChildPRs) > 0 {
 				state = "success"
-				description = "All submodule PRs merged cleanly"
+				description = fmt.Sprintf("All %d submodule PR(s) merged cleanly", len(metaPR.ChildPRs))
+			} else {
+				state = "pending"
+				description = fmt.Sprintf("Submodules: %d/%d merged, %d open", mergedCount, len(metaPR.ChildPRs), openCount)
 			}
 		}
 	}
@@ -245,6 +250,9 @@ func (c *GitLabClient) UpdateMetaCheckRun(ctx context.Context, repoFullName stri
 	params.Set("state", state)
 	params.Set("name", "meta-repo/sync")
 	params.Set("description", description)
+	if metaPR != nil && metaPR.PRNumber > 0 {
+		params.Set("target_url", fmt.Sprintf("https://gitlab.com/%s/-/merge_requests/%d", repoFullName, metaPR.PRNumber))
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, strings.NewReader(params.Encode()))
 	if err != nil {
