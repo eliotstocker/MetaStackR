@@ -1,3 +1,10 @@
+## [1.4.5](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.4...core-v1.4.5) (2026-08-13)
+
+
+### Bug Fixes
+
+* **gitlab:** use dedicated submodules endpoint to update branch pointers ([374bb7f](https://github.com/eliotstocker/MetaStackR/commit/374bb7f8048f51244b9501b60b0a7faf503282ed))
+
 ## [1.4.4](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.3...core-v1.4.4) (2026-08-13)
 
 
