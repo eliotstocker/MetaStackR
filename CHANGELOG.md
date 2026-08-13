@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/eliotstocker/MetaStackR/compare/core-v1.2.1...core-v1.3.0) (2026-08-13)
+
+
+### Features
+
+* **gitlab:** add dynamic submodule counts to status description and target_url redirect link ([56c07dd](https://github.com/eliotstocker/MetaStackR/commit/56c07dd07529490d5354da67f60c867f8945de94))
+
 ## [1.2.1](https://github.com/eliotstocker/MetaStackR/compare/core-v1.2.0...core-v1.2.1) (2026-08-13)
 
 
