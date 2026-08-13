@@ -678,19 +678,6 @@
               • <strong>${(list || []).length} submodule MRs</strong> and <strong>1 root MR</strong> will be merged to <code>${metaPR ? (metaPR.base_branch || 'main') : 'main'}</code> when checks pass.
             </div>
 
-            <!-- Action & Status Control Bar matching screenshot split-button -->
-            <div style="display: flex; align-items: center; gap: 12px; margin-top: 2px;">
-              <button type="button" id="metastackr-save-settings-btn" class="gl-btn-dark-split" style="background: #292929; color: #ffffff; border: none; padding: 7px 14px; border-radius: 4px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                <span>Set to auto-merge</span>
-                <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="m3.5 6 4.5 4.5L12.5 6"></path></svg>
-              </button>
-              <span style="font-size: 13px; color: var(--ms-fg-muted); display: inline-flex; align-items: center; gap: 5px;">
-                Merge when all merge checks pass
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="opacity: 0.7;"><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8m6.5-2a1.5 1.5 0 1 1 3 0v.5a.5.5 0 0 1-1 0V6a.5.5 0 1 0-1 0v1.5a.5.5 0 0 1-1 0zm1.5 5.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5"></path></svg>
-              </span>
-              <span id="metastackr-settings-status" style="font-size: 12px; color: var(--ms-state-merged-fg, #108548); margin-left: 6px;"></span>
-            </div>
-
             <!-- Form Controls for Checks & Merge Method -->
             <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--ms-border-default);">
               <div class="metastackr-form-group">
@@ -705,6 +692,11 @@
                   <option value="rebase">Rebase</option>
                 </select>
               </div>
+            </div>
+
+            <div style="margin-top: 8px; display: flex; align-items: center; gap: 12px;">
+              <button type="button" id="metastackr-save-settings-btn" class="btn btn-sm btn-primary">Save Policy Rules</button>
+              <span id="metastackr-settings-status" style="font-size: 12px; color: var(--ms-state-merged-fg, #108548);"></span>
             </div>
           </div>
         </div>
