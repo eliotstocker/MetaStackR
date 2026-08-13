@@ -412,7 +412,28 @@ func (s *Server) processNormalizedEvent(ctx context.Context, evt *NormalizedEven
 				instID := resolveInstallationID(evt.InstallationID, trackedMeta.InstallationID)
 				parentVCS := s.VCSForRepo(ctx, trackedMeta.RepoFullName)
 				childVCS := s.VCSForRepo(ctx, child.RepoFullName)
-				if parentMeta.HeadSHA == "" && parentMeta.PRNumber > 0 {
+				// Server-side Submodule Pointer Alignment on parent meta-repo branch when a submodule PR merges
+				if parentVCS != nil && parentMeta.BranchName != "" {
+					var pointerUpdates []vcs.SubmodulePointerUpdate
+					for _, ch := range parentMeta.ChildPRs {
+						if ch.Status == "MERGED" && ch.HeadSHA != "" {
+							pointerUpdates = append(pointerUpdates, vcs.SubmodulePointerUpdate{
+								SubmodulePath: ch.SubmodulePath,
+								SubmoduleRepo: ch.RepoFullName,
+								NewCommitSHA:  ch.HeadSHA,
+							})
+						}
+					}
+					if len(pointerUpdates) > 0 {
+						if err := parentVCS.UpdateSubmodulePointersOnBranch(ctx, trackedMeta.RepoFullName, parentMeta.BranchName, pointerUpdates, instID); err != nil {
+							log.Printf("[pointers] Error updating submodule pointers on branch %s for %s: %v", parentMeta.BranchName, trackedMeta.RepoFullName, err)
+						} else {
+							log.Printf("[pointers] Successfully updated submodule pointers on branch %s for %s", parentMeta.BranchName, trackedMeta.RepoFullName)
+						}
+					}
+				}
+
+				if parentVCS != nil && parentMeta.PRNumber > 0 {
 					if fetchedSHA, err := parentVCS.GetPRHeadSHA(ctx, trackedMeta.RepoFullName, parentMeta.PRNumber, instID); err == nil && fetchedSHA != "" {
 						parentMeta.HeadSHA = fetchedSHA
 						_ = s.repo.UpdateMetaPRHeadSHA(ctx, parentMeta.ID, fetchedSHA)
@@ -478,10 +499,14 @@ func (s *Server) autoSynthesizeChildPRs(ctx context.Context, metaPR *db.MetaPR, 
 							if cMerged {
 								status = "MERGED"
 							}
+							subPath := tr.RepoName
+							if subPath == "" {
+								subPath = tr.RepoFullName
+							}
 							childPR := &db.ChildPR{
 								ID:            uuid.New(),
 								MetaPRID:      metaPR.ID,
-								SubmodulePath: tr.RepoFullName,
+								SubmodulePath: subPath,
 								RepoFullName:  tr.RepoFullName,
 								PRNumber:      cPRNum,
 								HeadSHA:       cHeadSHA,

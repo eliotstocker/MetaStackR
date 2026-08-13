@@ -44,9 +44,10 @@ func (m *RealVCSMerger) MergePR(ctx context.Context, repo string, prNumber int, 
 }
 
 type Engine struct {
-	repo   *db.Repository
-	vcs    vcs.VCSProvider
-	merger ChildMerger
+	repo        *db.Repository
+	vcs         vcs.VCSProvider
+	vcsResolver func(ctx context.Context, repoFullName string) vcs.VCSProvider
+	merger      ChildMerger
 }
 
 func NewEngine(repo *db.Repository, vcsProvider vcs.VCSProvider, merger ChildMerger) *Engine {
@@ -62,6 +63,19 @@ func NewEngine(repo *db.Repository, vcsProvider vcs.VCSProvider, merger ChildMer
 		vcs:    vcsProvider,
 		merger: merger,
 	}
+}
+
+func (e *Engine) SetVCSResolver(resolver func(ctx context.Context, repoFullName string) vcs.VCSProvider) {
+	e.vcsResolver = resolver
+}
+
+func (e *Engine) VCSForRepo(ctx context.Context, repoFullName string) vcs.VCSProvider {
+	if e.vcsResolver != nil {
+		if p := e.vcsResolver(ctx, repoFullName); p != nil {
+			return p
+		}
+	}
+	return e.vcs
 }
 
 func (e *Engine) StartReconciliationLoop(ctx context.Context, interval time.Duration) {
@@ -225,7 +239,8 @@ func (e *Engine) ExecuteCascadeMerge(ctx context.Context, metaPRID uuid.UUID) er
 	}
 
 	// Server-side Submodule Pointer Alignment on parent meta-repo branch
-	if e.vcs != nil && metaPR.BranchName != "" {
+	vcsClient := e.VCSForRepo(ctx, metaRepoName)
+	if vcsClient != nil && metaPR.BranchName != "" {
 		var pointerUpdates []vcs.SubmodulePointerUpdate
 		for _, child := range metaPR.ChildPRs {
 			if child.HeadSHA != "" {
@@ -239,7 +254,7 @@ func (e *Engine) ExecuteCascadeMerge(ctx context.Context, metaPRID uuid.UUID) er
 		if len(pointerUpdates) > 0 {
 			var instID int64
 			_ = e.repo.DB().QueryRowContext(ctx, "SELECT installation_id FROM tracked_meta_repos WHERE id = $1", metaPR.MetaRepoID).Scan(&instID)
-			err := e.vcs.UpdateSubmodulePointersOnBranch(ctx, metaRepoName, metaPR.BranchName, pointerUpdates, instID)
+			err := vcsClient.UpdateSubmodulePointersOnBranch(ctx, metaRepoName, metaPR.BranchName, pointerUpdates, instID)
 			if err != nil {
 				log.Printf("[worker] Error: Failed to update submodule pointers on branch %s for %s: %v", metaPR.BranchName, metaRepoName, err)
 				_ = e.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "FAILED_PARTIAL", metaPR.LockVersion)
@@ -251,7 +266,12 @@ func (e *Engine) ExecuteCascadeMerge(ctx context.Context, metaPRID uuid.UUID) er
 		}
 	}
 
-	rootSHA, err := e.merger.MergePR(ctx, metaRepoName, metaPR.PRNumber, effectiveMergeMethod)
+	var rootSHA string
+	if vcsClient != nil {
+		rootSHA, err = vcsClient.MergePullRequest(ctx, metaRepoName, metaPR.PRNumber, effectiveMergeMethod, 0)
+	} else {
+		rootSHA, err = e.merger.MergePR(ctx, metaRepoName, metaPR.PRNumber, effectiveMergeMethod)
+	}
 	if err != nil {
 		_ = e.repo.UpdateMetaPRStatusWithLock(ctx, metaPR.ID, "FAILED_PARTIAL", metaPR.LockVersion)
 		_ = e.repo.CreateMergeAuditLog(ctx, metaPR.ID, "ROOT_META_PR_MERGE_FAILED", map[string]string{"error": err.Error()})

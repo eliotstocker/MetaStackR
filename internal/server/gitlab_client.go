@@ -452,6 +452,22 @@ func (c *GitLabClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 		return nil
 	}
 
+	// 0. Fetch and parse .gitmodules from parent repo to resolve relative submodule paths
+	gitmodulesURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/files/.gitmodules/raw?ref=%s", c.baseURL, c.projectIDOrPath(repoFullName), url.QueryEscape(branchName))
+	pathMap := make(map[string]string)
+	reqGitmodules, err := http.NewRequestWithContext(ctx, http.MethodGet, gitmodulesURL, nil)
+	if err == nil {
+		c.setAuthHeader(reqGitmodules)
+		if respGitmodules, err := c.httpClient.Do(reqGitmodules); err == nil {
+			if respGitmodules.StatusCode == http.StatusOK {
+				if bodyBytes, err := io.ReadAll(respGitmodules.Body); err == nil {
+					pathMap = ParseGitmodules(string(bodyBytes))
+				}
+			}
+			respGitmodules.Body.Close()
+		}
+	}
+
 	type commitAction struct {
 		Action   string `json:"action"`
 		FilePath string `json:"file_path"`
@@ -468,10 +484,18 @@ func (c *GitLabClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 		if mainSHA, err := c.GetBranchHeadSHA(ctx, subRepoName, "main", installationID); err == nil && mainSHA != "" {
 			shaToUse = mainSHA
 		}
-		if shaToUse != "" && up.SubmodulePath != "" {
+
+		filePath := up.SubmodulePath
+		if realPath, ok := pathMap[strings.ToLower(up.SubmoduleRepo)]; ok && realPath != "" {
+			filePath = realPath
+		} else if realPath, ok := pathMap[strings.ToLower(up.SubmodulePath)]; ok && realPath != "" {
+			filePath = realPath
+		}
+
+		if shaToUse != "" && filePath != "" {
 			actions = append(actions, commitAction{
 				Action:   "update",
-				FilePath: up.SubmodulePath,
+				FilePath: filePath,
 				Content:  shaToUse,
 			})
 		}

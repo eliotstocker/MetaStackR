@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"metastackr/internal/db"
 	"metastackr/internal/server"
+	"metastackr/internal/vcs"
 	"metastackr/internal/worker"
 )
 
@@ -81,6 +82,9 @@ func main() {
 
 	srv := server.NewServer(repo, ghClient, webhookSecret, func(c context.Context, id uuid.UUID) error {
 		return engine.ExecuteCascadeMerge(c, id)
+	})
+	engine.SetVCSResolver(func(c context.Context, repoFullName string) vcs.VCSProvider {
+		return srv.VCSForRepo(c, repoFullName)
 	})
 
 	mux := http.NewServeMux()
