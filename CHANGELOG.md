@@ -1,3 +1,10 @@
+## [1.4.4](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.3...core-v1.4.4) (2026-08-13)
+
+
+### Bug Fixes
+
+* **gitlab:** resolve submodule paths via .gitmodules, route dynamic VCS client, and update pointers immediately on child PR merge ([b596f94](https://github.com/eliotstocker/MetaStackR/commit/b596f944f939bf2725bcc149f7d817a0031113c9))
+
 ## [1.4.3](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.2...core-v1.4.3) (2026-08-13)
 
 
