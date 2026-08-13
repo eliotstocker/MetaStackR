@@ -61,6 +61,45 @@ func (c *GitLabClient) setAuthHeader(req *http.Request) {
 	}
 }
 
+func RefreshGitLabToken(ctx context.Context, clientID, clientSecret, refreshToken string) (string, string, error) {
+	if clientID == "" || clientSecret == "" || refreshToken == "" {
+		return "", "", fmt.Errorf("missing clientID, clientSecret, or refreshToken for OAuth token refresh")
+	}
+	tokenURL := "https://gitlab.com/oauth/token"
+	form := url.Values{}
+	form.Set("client_id", clientID)
+	form.Set("client_secret", clientSecret)
+	form.Set("refresh_token", refreshToken)
+	form.Set("grant_type", "refresh_token")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", "", fmt.Errorf("token refresh failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	var data struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return "", "", err
+	}
+	return data.AccessToken, data.RefreshToken, nil
+}
+
 func (c *GitLabClient) GetPRHeadSHA(ctx context.Context, repoFullName string, prNumber int, installationID int64) (string, error) {
 	if repoFullName == "" || prNumber <= 0 {
 		return "", fmt.Errorf("invalid repository or MR number")

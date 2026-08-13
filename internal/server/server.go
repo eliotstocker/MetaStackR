@@ -46,18 +46,50 @@ func (s *Server) VCS() vcs.VCSProvider {
 	return nil
 }
 
+func (s *Server) getOrRefreshUserGitLabToken(ctx context.Context, username string) (string, error) {
+	if s.repo == nil || username == "" {
+		return "", fmt.Errorf("no repository reference")
+	}
+
+	query := `SELECT access_token, COALESCE(refresh_token, ''), updated_at FROM user_vcs_tokens WHERE vcs_provider = 'gitlab' AND username = $1`
+	var accessToken, refreshToken string
+	var updatedAt time.Time
+	err := s.repo.DB().QueryRowContext(ctx, query, username).Scan(&accessToken, &refreshToken, &updatedAt)
+	if err != nil {
+		return "", err
+	}
+
+	// If token was updated within the last 90 minutes, use current access_token
+	if time.Since(updatedAt) < 90*time.Minute && accessToken != "" {
+		return accessToken, nil
+	}
+
+	// Automatic server-side OAuth token refresh using refresh_token
+	clientID := os.Getenv("GITLAB_CLIENT_ID")
+	clientSecret := os.Getenv("GITLAB_CLIENT_SECRET")
+	if refreshToken != "" && clientID != "" && clientSecret != "" {
+		newAccess, newRefresh, err := RefreshGitLabToken(ctx, clientID, clientSecret, refreshToken)
+		if err == nil && newAccess != "" {
+			_ = s.repo.SaveUserVCSToken(ctx, "gitlab", username, newAccess, newRefresh)
+			return newAccess, nil
+		}
+	}
+
+	return accessToken, nil
+}
+
 func (s *Server) VCSForRepo(ctx context.Context, repoFullName string) vcs.VCSProvider {
 	if s.repo != nil && repoFullName != "" {
 		if tracked, err := s.repo.GetTrackedRepoByFullName(ctx, repoFullName); err == nil && tracked != nil {
 			if tracked.VCSProvider == "gitlab" {
 				token := tracked.VCSToken
 				if token == "" && tracked.RepoOwner != "" {
-					token, _ = s.repo.GetUserVCSToken(ctx, "gitlab", tracked.RepoOwner)
+					token, _ = s.getOrRefreshUserGitLabToken(ctx, tracked.RepoOwner)
 				}
 				if token == "" {
 					parts := strings.Split(repoFullName, "/")
 					if len(parts) > 1 {
-						token, _ = s.repo.GetUserVCSToken(ctx, "gitlab", parts[0])
+						token, _ = s.getOrRefreshUserGitLabToken(ctx, parts[0])
 					}
 				}
 				if token == "" {
@@ -71,7 +103,7 @@ func (s *Server) VCSForRepo(ctx context.Context, repoFullName string) vcs.VCSPro
 		token := ""
 		parts := strings.Split(repoFullName, "/")
 		if len(parts) > 0 && s.repo != nil {
-			token, _ = s.repo.GetUserVCSToken(ctx, "gitlab", parts[0])
+			token, _ = s.getOrRefreshUserGitLabToken(ctx, parts[0])
 		}
 		if token == "" {
 			token = os.Getenv("GITLAB_TOKEN")
