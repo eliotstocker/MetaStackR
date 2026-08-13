@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.6...core-v1.5.0) (2026-08-13)
+
+
+### Features
+
+* **vcs:** dynamically match submodule paths from .gitmodules in HasNonSubmoduleFilesChanged ([fe54651](https://github.com/eliotstocker/MetaStackR/commit/fe546518fa2bf9c8dcd562646d72348ec62b4ea1))
+
 ## [1.4.6](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.5...core-v1.4.6) (2026-08-13)
 
 
