@@ -1180,18 +1180,55 @@ func (c *GitHubClient) HasNonSubmoduleFilesChanged(ctx context.Context, repoFull
 		return false, err
 	}
 
+	// 2. Fetch .gitmodules from repo root to resolve dynamic submodule paths
+	pathMap := make(map[string]string)
+	gitmodulesURL := fmt.Sprintf("%s/repos/%s/contents/.gitmodules", c.baseURL, repoFullName)
+	reqGitmodules, _ := http.NewRequestWithContext(ctx, http.MethodGet, gitmodulesURL, nil)
+	reqGitmodules.Header.Set("Accept", "application/vnd.github.v3.raw")
+	if respGitmodules, err := c.doRequestWithPATFallback(ctx, reqGitmodules, token, nil); err == nil {
+		if respGitmodules.StatusCode == http.StatusOK {
+			if bodyBytes, err := io.ReadAll(respGitmodules.Body); err == nil {
+				pathMap = ParseGitmodules(string(bodyBytes))
+			}
+		}
+		respGitmodules.Body.Close()
+	}
+
 	for _, f := range files {
 		fn := strings.TrimSpace(f.Filename)
-		if fn == "" || fn == ".gitmodules" {
-			continue
-		}
-		// If file path is not within submodules directory (services/) and not a known submodule path
-		if !strings.HasPrefix(fn, "services/") && !strings.HasPrefix(fn, "submodules/") {
+		if !IsSubmodulePath(fn, pathMap) {
 			return true, nil
 		}
 	}
 
 	return false, nil
+}
+
+// IsSubmodulePath returns true if the given file path is .gitmodules or falls within any submodule path in pathMap.
+func IsSubmodulePath(filePath string, pathMap map[string]string) bool {
+	clean := strings.TrimSpace(filePath)
+	if clean == "" || clean == ".gitmodules" {
+		return true
+	}
+	cleanLower := strings.ToLower(clean)
+	// Check exact match in pathMap
+	if _, ok := pathMap[cleanLower]; ok {
+		return true
+	}
+	// Check if within any submodule directory in pathMap
+	for _, subPath := range pathMap {
+		subClean := strings.ToLower(strings.TrimSpace(subPath))
+		if subClean != "" && (cleanLower == subClean || strings.HasPrefix(cleanLower, subClean+"/")) {
+			return true
+		}
+	}
+	// Fallback to common conventions if pathMap was empty
+	if len(pathMap) == 0 {
+		if strings.HasPrefix(cleanLower, "services/") || strings.HasPrefix(cleanLower, "submodules/") {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *GitHubClient) GetBranchHeadSHA(ctx context.Context, repoFullName string, branchName string, installationID int64) (string, error) {

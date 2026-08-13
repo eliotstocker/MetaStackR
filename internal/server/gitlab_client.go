@@ -688,12 +688,25 @@ func (c *GitLabClient) HasNonSubmoduleFilesChanged(ctx context.Context, repoFull
 		return false, err
 	}
 
+	// 2. Fetch .gitmodules to dynamically resolve all submodule paths
+	pathMap := make(map[string]string)
+	gitmodulesURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/files/.gitmodules/raw", c.baseURL, c.projectIDOrPath(repoFullName))
+	reqGitmodules, err := http.NewRequestWithContext(ctx, http.MethodGet, gitmodulesURL, nil)
+	if err == nil {
+		c.setAuthHeader(reqGitmodules)
+		if respGitmodules, err := c.httpClient.Do(reqGitmodules); err == nil {
+			if respGitmodules.StatusCode == http.StatusOK {
+				if bodyBytes, err := io.ReadAll(respGitmodules.Body); err == nil {
+					pathMap = ParseGitmodules(string(bodyBytes))
+				}
+			}
+			respGitmodules.Body.Close()
+		}
+	}
+
 	for _, ch := range changesPayload.Changes {
 		fn := strings.TrimSpace(ch.NewPath)
-		if fn == "" || fn == ".gitmodules" {
-			continue
-		}
-		if !strings.HasPrefix(fn, "services/") && !strings.HasPrefix(fn, "submodules/") {
+		if !IsSubmodulePath(fn, pathMap) {
 			return true, nil
 		}
 	}
