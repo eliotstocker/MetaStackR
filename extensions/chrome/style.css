@@ -478,7 +478,8 @@ body.gl-dark .metastackr-gitlab,
 .metastackr-gitlab .metastackr-panel,
 .metastackr-gitlab #metastackr-sidebar-card {
   font-family: var(--ms-font-family);
-  border-radius: 4px;
+  border-radius: 12px;
+  margin-top: 20px;
 }
 
 .metastackr-gitlab .metastackr-box {
@@ -504,7 +505,7 @@ body.gl-dark .metastackr-gitlab,
   background-color: var(--gl-button-primary-background-color, #1070ca);
   border-color: var(--gl-button-primary-border-color, #1070ca);
   color: var(--gl-button-primary-text-color, #ffffff);
-  border-radius: 4px;
+  border-radius: 10px;
   font-weight: 600;
   font-size: 13px;
   padding: 6px 12px;

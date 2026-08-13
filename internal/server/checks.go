@@ -296,21 +296,37 @@ type CheckRunPayload struct {
 
 // GenerateMarkdownTable produces a markdown summary matrix of all child PR states.
 func GenerateMarkdownTable(metaPR *db.MetaPR) (title string, summary string, text string) {
+	isGitLab := strings.Contains(strings.ToLower(metaPR.MetaRepoFullName), "gitlab")
+
 	title = fmt.Sprintf("Meta-Repo Sync Status: %s", metaPR.Status)
-	summary = fmt.Sprintf("Meta PR #%d (%s) - Submodule PR Matrix", metaPR.PRNumber, metaPR.BranchName)
+	if isGitLab {
+		summary = fmt.Sprintf("Meta MR !%d (%s) - Submodule Merge Request Matrix", metaPR.PRNumber, metaPR.BranchName)
+	} else {
+		summary = fmt.Sprintf("Meta PR #%d (%s) - Submodule PR Matrix", metaPR.PRNumber, metaPR.BranchName)
+	}
 
 	var sb strings.Builder
 	if len(metaPR.ChildPRs) == 0 {
-		sb.WriteString("### 🔄 Submodule Synchronization\n\nNo submodules affected\n")
+		if isGitLab {
+			sb.WriteString("### 🔄 Submodule Synchronization\n\nNo submodule Merge Requests affected\n")
+		} else {
+			sb.WriteString("### 🔄 Submodule Synchronization\n\nNo submodule Pull Requests affected\n")
+		}
 	} else {
-		sb.WriteString("### 🔄 Submodule Synchronization Matrix\n\n")
-		sb.WriteString("| Submodule Path | Child Repo | PR # | Head SHA | Status |\n")
+		if isGitLab {
+			sb.WriteString("### 🔄 Submodule Merge Request Matrix\n\n")
+			sb.WriteString("| Submodule Path | Child Repo | MR ! | Head SHA | Status |\n")
+		} else {
+			sb.WriteString("### 🔄 Submodule Synchronization Matrix\n\n")
+			sb.WriteString("| Submodule Path | Child Repo | PR # | Head SHA | Status |\n")
+		}
 		sb.WriteString("| :--- | :--- | :--- | :--- | :--- |\n")
 		for _, child := range metaPR.ChildPRs {
+			childIsGitLab := isGitLab || strings.Contains(strings.ToLower(child.RepoFullName), "gitlab")
 			prLink := fmt.Sprintf("#%d", child.PRNumber)
 			if child.PRNumber > 0 {
-				if strings.Contains(strings.ToLower(child.RepoFullName), "gitlab") || strings.Contains(strings.ToLower(metaPR.MetaRepoFullName), "gitlab") {
-					prLink = fmt.Sprintf("[%d](https://gitlab.com/%s/-/merge_requests/%d)", child.PRNumber, child.RepoFullName, child.PRNumber)
+				if childIsGitLab {
+					prLink = fmt.Sprintf("[!%d](https://gitlab.com/%s/-/merge_requests/%d)", child.PRNumber, child.RepoFullName, child.PRNumber)
 				} else {
 					prLink = fmt.Sprintf("[%d](https://github.com/%s/pull/%d)", child.PRNumber, child.RepoFullName, child.PRNumber)
 				}

@@ -221,7 +221,7 @@ func (c *GitLabClient) UpdateMetaCheckRun(ctx context.Context, repoFullName stri
 		switch metaPR.Status {
 		case "MERGED":
 			state = "success"
-			description = "All submodule PRs merged cleanly"
+			description = "All submodule MRs merged cleanly"
 		case "FAILED_DRIFT", "FAILED_PARTIAL":
 			state = "failed"
 			description = "Submodule synchronization failed"
@@ -237,7 +237,7 @@ func (c *GitLabClient) UpdateMetaCheckRun(ctx context.Context, repoFullName stri
 			}
 			if mergedCount == len(metaPR.ChildPRs) && len(metaPR.ChildPRs) > 0 {
 				state = "success"
-				description = fmt.Sprintf("All %d submodule PR(s) merged cleanly", len(metaPR.ChildPRs))
+				description = fmt.Sprintf("All %d submodule MR(s) merged cleanly", len(metaPR.ChildPRs))
 			} else {
 				state = "pending"
 				description = fmt.Sprintf("Submodules: %d/%d merged, %d open", mergedCount, len(metaPR.ChildPRs), openCount)
