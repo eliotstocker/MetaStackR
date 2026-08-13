@@ -1,3 +1,19 @@
+# [1.2.0](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.12...core-v1.2.0) (2026-08-13)
+
+
+### Bug Fixes
+
+* **oauth:** register wildcard path for /oauth/gitlab/login route ([69dd63d](https://github.com/eliotstocker/MetaStackR/commit/69dd63d7b4b12ef421fd6ef2daa9e3e1ecda3265))
+* **server:** fix build compilation errors in server.go for Lambda build ([d29a15c](https://github.com/eliotstocker/MetaStackR/commit/d29a15ceaf987c73d851f400c9f6b0021d40e81a))
+
+
+### Features
+
+* **gitlab:** add GitLab theme matching, URL matching, OAuth token persistence & status re-verification ([81872c9](https://github.com/eliotstocker/MetaStackR/commit/81872c974c2a6ad7cd22cc164a1b6a2bb3f4703e))
+* **oauth:** add /oauth/gitlab/login endpoint for automated redirect with configured client_id ([f58d7f3](https://github.com/eliotstocker/MetaStackR/commit/f58d7f3e443231383b38a4bf41bc1fbebddb7570))
+* **oauth:** add automatic server-side OAuth token refresh using refresh_token ([839fa6a](https://github.com/eliotstocker/MetaStackR/commit/839fa6ac262bfc32413e4b6000204818d58fd258))
+* **oauth:** store user OAuth App tokens in user_vcs_tokens table and strip local CLI token transmission ([b7280b1](https://github.com/eliotstocker/MetaStackR/commit/b7280b1e79012a807f3f91c6762c9253149923f2))
+
 ## [1.1.12](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.11...core-v1.1.12) (2026-08-11)
 
 
