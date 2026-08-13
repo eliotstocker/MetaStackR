@@ -133,6 +133,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	handleWithCORS("OPTIONS /webhooks/gitlab", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("GET /oauth/gitlab/callback", s.handleGitLabOAuthCallback)
 	handleWithCORS("OPTIONS /oauth/gitlab/callback", func(w http.ResponseWriter, r *http.Request) {})
+	handleWithCORS("GET /oauth/gitlab/login", s.handleGitLabOAuthLogin)
+	handleWithCORS("OPTIONS /oauth/gitlab/login", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("GET /api/v1/prs/status", s.handlePRStatusQuery)
 	handleWithCORS("OPTIONS /api/v1/prs/status", func(w http.ResponseWriter, r *http.Request) {})
 	handleWithCORS("POST /api/v1/prs/retry-merge", s.handleRetryMerge)
@@ -869,6 +871,20 @@ func (s *Server) handleUpdateRepoSettings(w http.ResponseWriter, r *http.Request
 		"success":  true,
 		"settings": tracked,
 	})
+}
+
+func (s *Server) handleGitLabOAuthLogin(w http.ResponseWriter, r *http.Request) {
+	clientID := os.Getenv("GITLAB_CLIENT_ID")
+	if clientID == "" {
+		http.Error(w, "GITLAB_CLIENT_ID not configured on server", http.StatusInternalServerError)
+		return
+	}
+	redirectURI := os.Getenv("GITLAB_REDIRECT_URI")
+	if redirectURI == "" {
+		redirectURI = "https://api.metastac.kr/oauth/gitlab/callback"
+	}
+	authURL := fmt.Sprintf("https://gitlab.com/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&scope=api", url.QueryEscape(clientID), url.QueryEscape(redirectURI))
+	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
 func (s *Server) handleGitLabOAuthCallback(w http.ResponseWriter, r *http.Request) {
