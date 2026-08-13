@@ -1,3 +1,10 @@
+## [1.4.6](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.5...core-v1.4.6) (2026-08-13)
+
+
+### Bug Fixes
+
+* **oauth:** route VCSForRepo through automatic token refresh for GitLab OAuth tokens ([8868ed9](https://github.com/eliotstocker/MetaStackR/commit/8868ed96f06a5bc8a7e39eb2448e2db2a4637656))
+
 ## [1.4.5](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.4...core-v1.4.5) (2026-08-13)
 
 
