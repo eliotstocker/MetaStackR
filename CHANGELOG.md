@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.0...core-v1.4.1) (2026-08-13)
+
+
+### Bug Fixes
+
+* **extension:** apply popout style guide strictly to GitLab while preserving GitHub Primer style on GitHub ([de280d3](https://github.com/eliotstocker/MetaStackR/commit/de280d30a91f89588578f0f894892e0accd4bdb2))
+
 # [1.4.0](https://github.com/eliotstocker/MetaStackR/compare/core-v1.3.0...core-v1.4.0) (2026-08-13)
 
 
