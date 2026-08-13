@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/eliotstocker/MetaStackR/compare/core-v1.2.0...core-v1.2.1) (2026-08-13)
+
+
+### Bug Fixes
+
+* **gitlab:** assign full markdown matrix table body in EnsureRootPRComment and format GitLab MR URLs ([c27baf4](https://github.com/eliotstocker/MetaStackR/commit/c27baf48043cabb4b3d9fbe20f0f92d7926d3c75))
+
 # [1.2.0](https://github.com/eliotstocker/MetaStackR/compare/core-v1.1.12...core-v1.2.0) (2026-08-13)
 
 
