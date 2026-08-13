@@ -1,3 +1,10 @@
+## [1.4.2](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.1...core-v1.4.2) (2026-08-13)
+
+
+### Bug Fixes
+
+* **extension:** remove set to auto-merge button from gitlab popout ([d2222f2](https://github.com/eliotstocker/MetaStackR/commit/d2222f234af3a153e177d68ac3761fffd27301a1))
+
 ## [1.4.1](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.0...core-v1.4.1) (2026-08-13)
 
 
