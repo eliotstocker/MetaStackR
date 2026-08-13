@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"metastackr/internal/db"
@@ -628,11 +630,12 @@ func (s *Server) handlePRStatusQuery(w http.ResponseWriter, r *http.Request) {
 	if tracked, trackedErr := s.repo.GetTrackedRepoByID(r.Context(), metaPR.MetaRepoID); trackedErr == nil && tracked != nil {
 		metaPR.MetaRepoFullName = tracked.RepoFullName
 		if len(metaPR.ChildPRs) == 0 {
+			parsedInstID, _ := strconv.ParseInt(tracked.InstallationID, 10, 64)
 			evt := &NormalizedEvent{
 				Repo:           tracked.RepoFullName,
 				PRNumber:       metaPR.PRNumber,
 				BranchName:     metaPR.BranchName,
-				InstallationID: tracked.InstallationID,
+				InstallationID: parsedInstID,
 			}
 			s.autoSynthesizeChildPRs(r.Context(), metaPR, evt)
 			if updatedChildren, err := s.repo.GetChildPRsByMetaPRID(r.Context(), metaPR.ID); err == nil && len(updatedChildren) > 0 {
@@ -654,6 +657,11 @@ func (s *Server) handlePRStatusQuery(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+			if hasChanged {
+				s.evaluateMetaPRReadiness(r.Context(), metaPR)
+			}
+		}
+
 		vcsClient := s.VCSForRepo(r.Context(), tracked.RepoFullName)
 		if vcsClient != nil {
 			instID := resolveInstallationID(0, tracked.InstallationID)
