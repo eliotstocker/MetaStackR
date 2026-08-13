@@ -601,48 +601,84 @@
 
     container.dataset.rendered = 'true';
 
-    if (isGitLab) {
-      // Native GitLab Auto-Merge Widget Layout matching Pajamas UI
-      container.innerHTML = `
-        <div class="metastackr-box metastackr-gitlab-widget" style="border: 1px solid var(--ms-border-default); border-radius: 8px; overflow: hidden; background: var(--ms-bg-default);">
-          <div class="metastackr-box-header gl-widget-header" style="background: var(--ms-bg-default); border-bottom: 1px solid var(--ms-border-default); padding: 14px 18px; display: flex; align-items: center; justify-content: space-between;">
-            <div class="metastackr-title-group" style="display: flex; align-items: center; gap: 10px;">
-              <span class="gl-status-icon-circle" style="width: 22px; height: 22px; border-radius: 50%; background: ${(metaPR && metaPR.status === 'MERGED') ? '#108548' : '#108548'}; color: #ffffff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+    container.dataset.rendered = 'true';
+
+    container.innerHTML = `
+      <div class="metastackr-box">
+        <div class="metastackr-box-header">
+          <div class="metastackr-title-group">
+            <h3 class="metastackr-box-title">
+              <svg aria-hidden="true" focusable="false" class="octicon octicon-zap" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+                <path d="M8.22 1.754a.75.75 0 0 0-1.44 0L4.537 7.033A.75.75 0 0 0 5.228 8.1h2.522l-1.97 6.142a.75.75 0 0 0 1.44 0l2.243-5.279A.75.75 0 0 0 8.772 7.9H6.25l1.97-6.146Z"></path>
+              </svg>
+              ${matrixTitleText}
+            </h3>
+            <span class="status-badge state-${(metaPR ? (metaPR.status || 'open') : 'open').toLowerCase()}">${metaPR ? (metaPR.status || 'Open') : 'Open'}</span>
+          </div>
+          <span class="metastackr-badge-muted">Lock Version ${metaPR ? (metaPR.lock_version || 1) : 1}</span>
+        </div>
+        <div class="metastackr-grid">
+          <div class="metastackr-grid-header">
+            <div class="col-path">Submodule Path</div>
+            <div class="col-repo">Submodule Repo</div>
+            <div class="col-pr">${colPrText}</div>
+            <div class="col-sha">Commit SHA</div>
+            <div class="col-status">Merge Status</div>
+          </div>
+          ${rowsHtml || emptyMessage}
+        </div>
+      </div>
+
+      <details class="metastackr-settings-details">
+        <summary>
+          <svg aria-hidden="true" focusable="false" class="octicon octicon-gear" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+            <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"></path>
+          </svg>
+          <span>Auto-Merge Policy Rules</span>
+          <span class="caret"></span>
+        </summary>
+
+        <div class="metastackr-box metastackr-settings-card ${isGitLab ? 'metastackr-gitlab-popout' : ''}" style="margin-top: 10px; border: 1px solid var(--ms-border-default); border-radius: 8px; overflow: hidden; background: var(--ms-bg-default);">
+          <!-- Popped-out Policy Header -->
+          <div class="metastackr-box-header" style="padding: 12px 16px; background: var(--ms-bg-subtle); border-bottom: 1px solid var(--ms-border-default); display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="width: 20px; height: 20px; border-radius: 50%; background: #108548; color: #ffffff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
                   <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path>
                 </svg>
               </span>
-              <h3 class="metastackr-box-title" style="font-size: 15px; font-weight: 600; margin: 0; color: var(--ms-fg-default);">
-                ${(metaPR && metaPR.status === 'MERGED') ? 'Merged &amp; Synchronized!' : 'Ready to merge!'}
+              <h3 class="metastackr-box-title" style="font-size: 14px; font-weight: 600; margin: 0; color: var(--ms-fg-default);">
+                ${(metaPR && metaPR.status === 'MERGED') ? 'Ready to merge!' : 'Auto-Merge Policy Rules'}
               </h3>
             </div>
-            <span class="metastackr-badge-muted">Lock Version ${metaPR ? (metaPR.lock_version || 1) : 1}</span>
+            <span style="font-size: 12px; color: var(--ms-fg-muted);">Active Policy Rules</span>
           </div>
 
-          <div class="gl-widget-body" style="padding: 16px 18px; background: var(--ms-bg-subtle);">
+          <!-- Popped-out Policy Body -->
+          <div style="padding: 16px; background: var(--ms-bg-default); display: flex; flex-direction: column; gap: 14px;">
             <!-- Policy Rules Checkboxes Row -->
-            <div class="gl-policy-checkboxes" style="display: flex; flex-wrap: wrap; gap: 20px; align-items: center; margin-bottom: 10px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 18px; align-items: center;">
               <label class="metastackr-checkbox-label" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
                 <input type="checkbox" id="metastackr-auto-merge-chk" checked style="accent-color: #1f75cb; width: 16px; height: 16px;">
-                <span>Delete source branch</span>
+                <span><strong>Enable Auto Cascade Merge</strong></span>
               </label>
               <label class="metastackr-checkbox-label" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
                 <input type="checkbox" id="metastackr-require-approval-chk" checked style="accent-color: #1f75cb; width: 16px; height: 16px;">
-                <span>Require Root MR Approval</span>
+                <span><strong>Require Root ${itemTerm} Approval</strong></span>
               </label>
               <label class="metastackr-checkbox-label" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; cursor: pointer;">
                 <input type="checkbox" id="metastackr-submodule-only-chk" checked style="accent-color: #1f75cb; width: 16px; height: 16px;">
-                <span>Submodule Only Changes</span>
+                <span><strong>Submodule Only Changes</strong></span>
               </label>
             </div>
 
-            <!-- Bullet Summary Line -->
-            <div class="gl-policy-bullet-summary" style="font-size: 13px; color: var(--ms-fg-muted); margin-bottom: 14px; padding-left: 2px;">
-              • <strong>${(list || []).length} submodule MRs</strong> and <strong>1 root MR</strong> will be added to <code>${metaPR ? (metaPR.base_branch || 'main') : 'main'}</code>.
+            <!-- Bullet Summary Line matching screenshot style -->
+            <div style="font-size: 13px; color: var(--ms-fg-muted); padding-left: 2px;">
+              • <strong>${(list || []).length} submodule ${itemTerm}s</strong> and <strong>1 root ${itemTerm}</strong> will be merged to <code>${metaPR ? (metaPR.base_branch || 'main') : 'main'}</code> when checks pass.
             </div>
 
-            <!-- Action & Auto-Merge Control Bar matching dark split-button in screenshot -->
-            <div class="gl-policy-action-bar" style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+            <!-- Action & Status Control Bar matching screenshot split-button -->
+            <div style="display: flex; align-items: center; gap: 12px; margin-top: 2px;">
               <button type="button" id="metastackr-save-settings-btn" class="gl-btn-dark-split" style="background: #292929; color: #ffffff; border: none; padding: 7px 14px; border-radius: 4px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
                 <span>Set to auto-merge</span>
                 <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><path d="m3.5 6 4.5 4.5L12.5 6"></path></svg>
@@ -654,118 +690,25 @@
               <span id="metastackr-settings-status" style="font-size: 12px; color: var(--ms-state-merged-fg, #108548); margin-left: 6px;"></span>
             </div>
 
-            <!-- Submodule MR Matrix Grid -->
-            <div class="metastackr-grid" style="border: 1px solid var(--ms-border-default); border-radius: 6px; overflow: hidden; background: var(--ms-bg-default);">
-              <div class="metastackr-grid-header">
-                <div class="col-path">Submodule Path</div>
-                <div class="col-repo">Submodule Repo</div>
-                <div class="col-pr">${colPrText}</div>
-                <div class="col-sha">Commit SHA</div>
-                <div class="col-status">Merge Status</div>
-              </div>
-              ${rowsHtml || emptyMessage}
-            </div>
-
-            <!-- Advanced Policy Rules Collapsible -->
-            <details class="metastackr-settings-details" style="margin-top: 14px;">
-              <summary style="font-size: 12px; color: var(--ms-fg-muted);">
-                <span>Advanced Policy Rules &amp; Merge Method</span>
-                <span class="caret"></span>
-              </summary>
-              <div style="padding-top: 10px; display: flex; flex-direction: column; gap: 10px;">
-                <div class="metastackr-form-group">
-                  <label for="metastackr-req-checks-input" style="font-size: 12px;"><strong>Required Status Checks:</strong> <span style="font-weight: normal; opacity: 0.8;">(comma-separated, e.g. <code>ci/build, lint</code>)</span></label>
-                  <input type="text" id="metastackr-req-checks-input" class="metastackr-form-control" value="" placeholder="e.g. ci/build, test" style="max-width: 450px;">
-                </div>
-                <div class="metastackr-form-group">
-                  <label for="metastackr-merge-method-select" style="font-size: 12px;"><strong>Default Merge Method:</strong></label>
-                  <select id="metastackr-merge-method-select" class="metastackr-form-control" style="width: 160px;">
-                    <option value="merge" selected>Merge (commit)</option>
-                    <option value="squash">Squash</option>
-                    <option value="rebase">Rebase</option>
-                  </select>
-                </div>
-              </div>
-            </details>
-          </div>
-        </div>
-      `;
-    } else {
-      // Standard GitHub Layout
-      container.innerHTML = `
-        <div class="metastackr-box">
-          <div class="metastackr-box-header">
-            <div class="metastackr-title-group">
-              <h3 class="metastackr-box-title">
-                <svg aria-hidden="true" focusable="false" class="octicon octicon-zap" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-                  <path d="M8.22 1.754a.75.75 0 0 0-1.44 0L4.537 7.033A.75.75 0 0 0 5.228 8.1h2.522l-1.97 6.142a.75.75 0 0 0 1.44 0l2.243-5.279A.75.75 0 0 0 8.772 7.9H6.25l1.97-6.146Z"></path>
-                </svg>
-                ${matrixTitleText}
-              </h3>
-              <span class="status-badge state-${(metaPR ? (metaPR.status || 'open') : 'open').toLowerCase()}">${metaPR ? (metaPR.status || 'Open') : 'Open'}</span>
-            </div>
-            <span class="metastackr-badge-muted">Lock Version ${metaPR ? (metaPR.lock_version || 1) : 1}</span>
-          </div>
-          <div class="metastackr-grid">
-            <div class="metastackr-grid-header">
-              <div class="col-path">Submodule Path</div>
-              <div class="col-repo">Submodule Repo</div>
-              <div class="col-pr">${colPrText}</div>
-              <div class="col-sha">Commit SHA</div>
-              <div class="col-status">Merge Status</div>
-            </div>
-            ${rowsHtml || emptyMessage}
-          </div>
-        </div>
-
-        <details class="metastackr-settings-details">
-          <summary>
-            <svg aria-hidden="true" focusable="false" class="octicon octicon-gear" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
-              <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"></path>
-            </svg>
-            <span>Auto-Merge Policy Rules</span>
-            <span class="caret"></span>
-          </summary>
-          <div class="metastackr-box metastackr-settings-card">
-            <div style="background: transparent; border-bottom: 1px solid var(--ms-border-default); padding-bottom: 8px; margin-bottom: 12px;">
-              <h3 class="metastackr-box-title">
-                Policy Rules Settings
-              </h3>
-            </div>
-            <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px;">
-              <label class="metastackr-checkbox-label">
-                <input type="checkbox" id="metastackr-require-approval-chk" checked>
-                <span><strong>Require Root ${itemTerm} Approval</strong> — Root ${itemTerm} must have an <code>APPROVED</code> review before auto-merge</span>
-              </label>
-              <label class="metastackr-checkbox-label">
-                <input type="checkbox" id="metastackr-auto-merge-chk" checked>
-                <span><strong>Enable Auto Cascade Merge</strong> — Automatically trigger cascade merge when all policy rules pass</span>
-              </label>
-              <label class="metastackr-checkbox-label">
-                <input type="checkbox" id="metastackr-submodule-only-chk" checked>
-                <span><strong>Submodule Only Changes</strong> — Auto-merge only when changes are restricted to submodules (pause if root files are modified)</span>
-              </label>
-              <div class="metastackr-form-group" style="margin-top: 4px;">
-                <label for="metastackr-req-checks-input"><strong>Required Status Checks:</strong> <span style="font-weight: normal; opacity: 0.8;">(comma-separated check names, e.g. <code>ci/build, lint</code>)</span></label>
+            <!-- Form Controls for Checks & Merge Method -->
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--ms-border-default);">
+              <div class="metastackr-form-group">
+                <label for="metastackr-req-checks-input" style="font-size: 12px;"><strong>Required Status Checks:</strong> <span style="font-weight: normal; opacity: 0.8;">(comma-separated check names, e.g. <code>ci/build, lint</code>)</span></label>
                 <input type="text" id="metastackr-req-checks-input" class="metastackr-form-control" value="" placeholder="e.g. ci/build, test" style="max-width: 450px;">
               </div>
-              <div class="metastackr-form-group" style="margin-top: 4px;">
-                <label for="metastackr-merge-method-select"><strong>Default Merge Method:</strong></label>
+              <div class="metastackr-form-group">
+                <label for="metastackr-merge-method-select" style="font-size: 12px;"><strong>Default Merge Method:</strong></label>
                 <select id="metastackr-merge-method-select" class="metastackr-form-control" style="width: 160px;">
                   <option value="merge" selected>Merge (commit)</option>
                   <option value="squash">Squash</option>
                   <option value="rebase">Rebase</option>
                 </select>
               </div>
-              <div style="margin-top: 8px; display: flex; align-items: center; gap: 12px;">
-                <button type="button" id="metastackr-save-settings-btn" class="btn btn-sm btn-primary">Save Policy Rules</button>
-                <span id="metastackr-settings-status" style="font-size: 12px; color: var(--ms-state-merged-fg, #1a7f37);"></span>
-              </div>
             </div>
           </div>
-        </details>
-      `;
-    }
+        </div>
+      </details>
+    `;
 
     container.style.display = 'block';
 
