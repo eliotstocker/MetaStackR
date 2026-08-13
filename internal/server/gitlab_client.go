@@ -274,10 +274,12 @@ func (c *GitLabClient) EnsureRootPRComment(ctx context.Context, repoFullName str
 		return nil
 	}
 
-	_, _, body := GenerateMarkdownTable(metaPR)
+	marker := "<!-- metastackr-root-pr-comment -->"
+	_, _, tableMarkdown := GenerateMarkdownTable(metaPR)
+	body := fmt.Sprintf("%s\n%s", marker, tableMarkdown)
 
-	// 1. Fetch existing notes on the MR to see if MetaStackr note already exists
-	listURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes?per_page=100", c.baseURL, c.projectIDOrPath(repoFullName), prNumber)
+	// 1. Fetch existing notes on the MR in chronological order (earliest first)
+	listURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes?sort=asc&order_by=created_at&per_page=100", c.baseURL, c.projectIDOrPath(repoFullName), prNumber)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
 	if err != nil {
 		return err
@@ -292,6 +294,7 @@ func (c *GitLabClient) EnsureRootPRComment(ctx context.Context, repoFullName str
 
 	var existingNoteID int64
 	var existingBody string
+	var duplicateNoteIDs []int64
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var notes []struct {
@@ -300,16 +303,32 @@ func (c *GitLabClient) EnsureRootPRComment(ctx context.Context, repoFullName str
 		}
 		if json.NewDecoder(resp.Body).Decode(&notes) == nil {
 			for _, n := range notes {
-				if strings.Contains(n.Body, "MetaStackr") || strings.Contains(n.Body, "PR Status Matrix") || strings.Contains(n.Body, "Submodule Synchronization") || strings.Contains(n.Body, "Meta-Repo Sync Status") {
-					existingNoteID = n.ID
-					existingBody = n.Body
-					break
+				if strings.Contains(n.Body, marker) || strings.Contains(n.Body, "MetaStackr") || strings.Contains(n.Body, "metastackr") || strings.Contains(n.Body, "PR Status Matrix") || strings.Contains(n.Body, "Submodule Synchronization") || strings.Contains(n.Body, "Submodule Merge Request Matrix") || strings.Contains(n.Body, "Meta-Repo Sync Status") {
+					if existingNoteID == 0 {
+						// Keep the initial comment to overwrite
+						existingNoteID = n.ID
+						existingBody = n.Body
+					} else {
+						// Collect any subsequent duplicate comments for cleanup
+						duplicateNoteIDs = append(duplicateNoteIDs, n.ID)
+					}
 				}
 			}
 		}
 	}
 
-	// 2. If existing note matches body exactly, do nothing
+	// 2. Delete any redundant duplicate notes so only the single initial comment remains
+	for _, dupID := range duplicateNoteIDs {
+		delURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes/%d", c.baseURL, c.projectIDOrPath(repoFullName), prNumber, dupID)
+		if delReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, delURL, nil); err == nil {
+			c.setAuthHeader(delReq)
+			if dResp, err := c.httpClient.Do(delReq); err == nil {
+				dResp.Body.Close()
+			}
+		}
+	}
+
+	// 3. If existing note matches body exactly, do nothing
 	if existingNoteID > 0 && strings.TrimSpace(existingBody) == strings.TrimSpace(body) {
 		return nil
 	}
@@ -319,11 +338,11 @@ func (c *GitLabClient) EnsureRootPRComment(ctx context.Context, repoFullName str
 
 	var updateReq *http.Request
 	if existingNoteID > 0 {
-		// Update existing note in-place via PUT
+		// Overwrite the initial note in-place via PUT
 		putURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes/%d", c.baseURL, c.projectIDOrPath(repoFullName), prNumber, existingNoteID)
 		updateReq, _ = http.NewRequestWithContext(ctx, http.MethodPut, putURL, bytes.NewReader(jsonBytes))
 	} else {
-		// Create new note via POST
+		// Create the initial note via POST
 		postURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes", c.baseURL, c.projectIDOrPath(repoFullName), prNumber)
 		updateReq, _ = http.NewRequestWithContext(ctx, http.MethodPost, postURL, bytes.NewReader(jsonBytes))
 	}
@@ -348,10 +367,11 @@ func (c *GitLabClient) EnsureChildPRComment(ctx context.Context, childRepo strin
 		return nil
 	}
 
-	body := fmt.Sprintf("🔗 **MetaStackr Child PR**: Managed by Parent Meta PR [%s#%d](%s/%s/-/merge_requests/%d)", parentMetaRepo, parentPRNumber, c.baseURL, parentMetaRepo, parentPRNumber)
+	marker := "<!-- metastackr-child-pr-comment -->"
+	body := fmt.Sprintf("%s\n🔗 **MetaStackr Child MR**: Managed by Parent Meta MR [%s!%d](https://gitlab.com/%s/-/merge_requests/%d)", marker, parentMetaRepo, parentPRNumber, parentMetaRepo, parentPRNumber)
 
-	// Check if note already exists
-	listURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes?per_page=100", c.baseURL, c.projectIDOrPath(childRepo), prNumber)
+	// Fetch notes to check for initial comment vs duplicates
+	listURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes?sort=asc&order_by=created_at&per_page=100", c.baseURL, c.projectIDOrPath(childRepo), prNumber)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
 	if err == nil {
 		c.setAuthHeader(req)
@@ -361,12 +381,50 @@ func (c *GitLabClient) EnsureChildPRComment(ctx context.Context, childRepo strin
 				ID   int64  `json:"id"`
 				Body string `json:"body"`
 			}
+			var existingNoteID int64
+			var existingBody string
+			var duplicateNoteIDs []int64
+
 			if json.NewDecoder(resp.Body).Decode(&notes) == nil {
 				for _, n := range notes {
-					if strings.Contains(n.Body, "MetaStackr Child PR") {
-						return nil
+					if strings.Contains(n.Body, marker) || strings.Contains(n.Body, "MetaStackr Child PR") || strings.Contains(n.Body, "MetaStackr Child MR") {
+						if existingNoteID == 0 {
+							existingNoteID = n.ID
+							existingBody = n.Body
+						} else {
+							duplicateNoteIDs = append(duplicateNoteIDs, n.ID)
+						}
 					}
 				}
+			}
+
+			// Clean up duplicate notes
+			for _, dupID := range duplicateNoteIDs {
+				delURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes/%d", c.baseURL, c.projectIDOrPath(childRepo), prNumber, dupID)
+				if delReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, delURL, nil); err == nil {
+					c.setAuthHeader(delReq)
+					if dResp, err := c.httpClient.Do(delReq); err == nil {
+						dResp.Body.Close()
+					}
+				}
+			}
+
+			if existingNoteID > 0 {
+				if strings.TrimSpace(existingBody) == strings.TrimSpace(body) {
+					return nil
+				}
+				// Overwrite initial note in-place
+				putURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes/%d", c.baseURL, c.projectIDOrPath(childRepo), prNumber, existingNoteID)
+				payload := map[string]string{"body": body}
+				jsonBytes, _ := json.Marshal(payload)
+				if putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, putURL, bytes.NewReader(jsonBytes)); err == nil {
+					putReq.Header.Set("Content-Type", "application/json")
+					c.setAuthHeader(putReq)
+					if pResp, err := c.httpClient.Do(putReq); err == nil {
+						pResp.Body.Close()
+					}
+				}
+				return nil
 			}
 		}
 	}
