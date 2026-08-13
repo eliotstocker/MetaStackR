@@ -11,6 +11,7 @@ dist/
 *.tfstate
 *.tfstate.backup
 bootstrap.zip
+terraform/bootstrap
 
 # Node dependencies
 node_modules/

@@ -468,13 +468,6 @@ func (c *GitLabClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 		}
 	}
 
-	type commitAction struct {
-		Action   string `json:"action"`
-		FilePath string `json:"file_path"`
-		Content  string `json:"content"`
-	}
-
-	var actions []commitAction
 	for _, up := range updates {
 		shaToUse := up.NewCommitSHA
 		subRepoName := up.SubmoduleRepo
@@ -492,43 +485,36 @@ func (c *GitLabClient) UpdateSubmodulePointersOnBranch(ctx context.Context, repo
 			filePath = realPath
 		}
 
-		if shaToUse != "" && filePath != "" {
-			actions = append(actions, commitAction{
-				Action:   "update",
-				FilePath: filePath,
-				Content:  shaToUse,
-			})
+		if shaToUse == "" || filePath == "" {
+			continue
 		}
-	}
 
-	if len(actions) == 0 {
-		return nil
-	}
+		payload := map[string]interface{}{
+			"branch":         branchName,
+			"commit_sha":     shaToUse,
+			"commit_message": fmt.Sprintf("chore(meta): align %s submodule pointer to HEAD", filePath),
+		}
+		jsonBytes, _ := json.Marshal(payload)
 
-	commitPayload := map[string]interface{}{
-		"branch":         branchName,
-		"commit_message": "chore(meta): align submodule pointers to HEAD",
-		"actions":        actions,
-	}
-	jsonBytes, _ := json.Marshal(commitPayload)
+		reqURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/submodules/%s", c.baseURL, c.projectIDOrPath(repoFullName), url.QueryEscape(filePath))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPut, reqURL, bytes.NewReader(jsonBytes))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		c.setAuthHeader(req)
 
-	reqURL := fmt.Sprintf("%s/api/v4/projects/%s/repository/commits", c.baseURL, c.projectIDOrPath(repoFullName))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(jsonBytes))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	c.setAuthHeader(req)
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to commit submodule pointer update: HTTP %d %s", resp.StatusCode, string(body))
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return fmt.Errorf("failed to update submodule pointer for %s: HTTP %d %s", filePath, resp.StatusCode, string(body))
+		}
+		resp.Body.Close()
 	}
 
 	return nil
