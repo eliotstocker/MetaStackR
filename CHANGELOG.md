@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/eliotstocker/MetaStackR/compare/core-v1.5.0...core-v1.6.0) (2026-08-16)
+
+
+### Features
+
+* **demo:** add synchronized multi-repo demo recording system and update website showcase ([af0dd25](https://github.com/eliotstocker/MetaStackR/commit/af0dd25a909f9d6529cc173b9e1216c66b4c214c))
+
 # [1.5.0](https://github.com/eliotstocker/MetaStackR/compare/core-v1.4.6...core-v1.5.0) (2026-08-13)
 
 
