@@ -262,39 +262,87 @@ func CheckoutBranch(rootDir string, branchName string, create bool) error {
 	return nil
 }
 
-func CommitAtomic(rootDir, message string) error {
+func CommitAtomic(rootDir, message string, stagedOnly bool) error {
 	status, err := GetLocalStatus(rootDir)
 	if err != nil {
 		return err
 	}
 
-	// 1. Commit all modified submodules
 	var modifiedSubmodules []string
-	for _, sub := range status.Submodules {
-		subDir := rootDir + "/" + sub.Path
-		if sub.HasUncommitted {
-			if _, err := ExecGit(subDir, "add", "-A"); err != nil {
-				return fmt.Errorf("failed git add in submodule %s: %w", sub.Path, err)
-			}
-			if _, err := ExecGit(subDir, "commit", "-m", message); err != nil {
-				return fmt.Errorf("failed git commit in submodule %s: %w", sub.Path, err)
-			}
-			modifiedSubmodules = append(modifiedSubmodules, sub.Path)
-		}
-	}
 
-	// 2. Stage updated submodule references and commit parent repo
-	if len(modifiedSubmodules) > 0 {
-		for _, path := range modifiedSubmodules {
-			if _, err := ExecGit(rootDir, "add", path); err != nil {
-				return fmt.Errorf("failed to add submodule ref %s to parent: %w", path, err)
+	if stagedOnly {
+		// 1. Commit only submodules that have staged changes
+		for _, sub := range status.Submodules {
+			subDir := rootDir + "/" + sub.Path
+			out, err := ExecGit(subDir, "diff", "--cached", "--name-only")
+			if err != nil {
+				return fmt.Errorf("failed to check staged status in submodule %s: %w", sub.Path, err)
+			}
+			if strings.TrimSpace(out) != "" {
+				if _, err := ExecGit(subDir, "commit", "-m", message); err != nil {
+					return fmt.Errorf("failed git commit in submodule %s: %w", sub.Path, err)
+				}
+				modifiedSubmodules = append(modifiedSubmodules, sub.Path)
 			}
 		}
-	}
 
-	// Also add any other modified files in parent repo
-	if _, err := ExecGit(rootDir, "commit", "-am", message); err != nil {
-		return fmt.Errorf("failed parent git commit: %w", err)
+		// 2. Stage updated submodule references in parent repo
+		if len(modifiedSubmodules) > 0 {
+			for _, path := range modifiedSubmodules {
+				if _, err := ExecGit(rootDir, "add", path); err != nil {
+					return fmt.Errorf("failed to add submodule ref %s to parent: %w", path, err)
+				}
+			}
+		}
+
+		// 3. Commit only staged changes in parent repo (including the submodule references we just staged)
+		out, err := ExecGit(rootDir, "diff", "--cached", "--name-only")
+		if err != nil {
+			return fmt.Errorf("failed to check staged status in parent: %w", err)
+		}
+		if strings.TrimSpace(out) != "" {
+			if _, err := ExecGit(rootDir, "commit", "-m", message); err != nil {
+				return fmt.Errorf("failed parent git commit: %w", err)
+			}
+		} else if len(modifiedSubmodules) == 0 {
+			return fmt.Errorf("no staged changes found to commit (use git meta commit without --staged to auto-stage all changes)")
+		}
+	} else {
+		// 1. Commit all modified submodules
+		for _, sub := range status.Submodules {
+			subDir := rootDir + "/" + sub.Path
+			if sub.HasUncommitted {
+				if _, err := ExecGit(subDir, "add", "-A"); err != nil {
+					return fmt.Errorf("failed git add in submodule %s: %w", sub.Path, err)
+				}
+				if _, err := ExecGit(subDir, "commit", "-m", message); err != nil {
+					return fmt.Errorf("failed git commit in submodule %s: %w", sub.Path, err)
+				}
+				modifiedSubmodules = append(modifiedSubmodules, sub.Path)
+			}
+		}
+
+		// 2. Stage updated submodule references and commit parent repo
+		if len(modifiedSubmodules) > 0 {
+			for _, path := range modifiedSubmodules {
+				if _, err := ExecGit(rootDir, "add", path); err != nil {
+					return fmt.Errorf("failed to add submodule ref %s to parent: %w", path, err)
+				}
+			}
+		}
+
+		// Also add any other modified files in parent repo
+		if _, err := ExecGit(rootDir, "commit", "-am", message); err != nil {
+			if _, errAdd := ExecGit(rootDir, "add", "-A"); errAdd == nil {
+				if _, errRetry := ExecGit(rootDir, "commit", "-m", message); errRetry != nil {
+					if len(modifiedSubmodules) == 0 {
+						return fmt.Errorf("failed parent git commit: %w", err)
+					}
+				}
+			} else if len(modifiedSubmodules) == 0 {
+				return fmt.Errorf("failed parent git commit: %w", err)
+			}
+		}
 	}
 
 	return nil

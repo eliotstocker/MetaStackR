@@ -5,20 +5,20 @@ Integrate MetaStackr directly into your browser, VS Code, and JetBrains IDEs.
 ---
 
 ### Chrome Extension
-Native GitHub PR tab page, submodule synchronization matrix, live dark mode UI, and status badges directly on GitHub.
+Native PR matrix tab, real-time submodule synchronization status, and check run overlays directly on GitHub and GitLab.
 
 **Status: Available** | [Install Extension](https://github.com/eliotstocker/MetaStackr/tree/main/extensions/chrome)
 
 ---
 
 ### VS Code Extension
-Inspect submodule alignment, track detached HEAD states, run `git-meta` commands, and view PR matrices inside VS Code.
+Unified Source Control panel showing multi-repo worktree changes, staging with atomic coordinated commits, and automatic pointer alignment.
 
-**Status: Coming Soon**
+**Status: Available** | [View Extension](https://github.com/eliotstocker/MetaStackr/tree/main/extensions/vscode)
 
 ---
 
 ### JetBrains Plugin
-Integrated tool window for IntelliJ, PyCharm, and GoLand with automatic submodule drift monitoring and cascade merge controls.
+Dedicated MetaStackr Tool Window for IntelliJ IDEA, PyCharm, WebStorm, and GoLand with multi-repo drift tracking, atomic commits, and VCS checkin interception.
 
-**Status: Coming Soon**
+**Status: Available** | [View Plugin](https://github.com/eliotstocker/MetaStackr/tree/main/extensions/jetbrains)

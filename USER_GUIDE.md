@@ -92,7 +92,11 @@ git meta checkout -b feature/my-feature
 Creates coordinated atomic commits across all modified submodules and updates the parent meta-repo commit pointers in a single operation.
 
 ```bash
+# Auto-stages and commits all dirty submodules & updates parent pointers
 git meta commit -m "<commit-message>"
+
+# Only commits changes already staged in the index (plus updated submodule pointers)
+git meta commit -m "<commit-message>" --staged
 ```
 
 ---

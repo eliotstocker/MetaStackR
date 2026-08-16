@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>metastackr — meta-repo orchestration platform</title>
-<meta name="description" content="An event-driven meta-repo orchestration platform with custom git-meta CLI and PostgreSQL DAG cascade merge engine." />
+<meta name="description" content="An event-driven meta-repo orchestration platform with custom git meta CLI and PostgreSQL DAG cascade merge engine." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;400;500;700&display=swap" />
@@ -30,9 +30,11 @@
           </a>
         </div>
       </div>
+      <a href="#flow">How It Works</a>
+      <a href="#comparison">Why Tho?</a>
       <a href="#features">Features</a>
       <a href="#extensions">Extensions</a>
-      <a href="#config">Config</a>
+      <a href="#cli">CLI Commands</a>
       <a href="#agents">Agents</a>
       <a href="https://github.com/eliotstocker/MetaStackr">GitHub</a>
     </nav>
@@ -66,24 +68,158 @@
   </section>
 
   <section class="demo">
-    <div class="platform-tabs">
-      <button class="tab-btn active" data-tab="terminal">💻 Terminal CLI</button>
-      <button class="tab-btn" data-tab="github">🐙 GitHub PR Matrix</button>
-      <button class="tab-btn" data-tab="gitlab">🦊 GitLab MR Overlay</button>
+    <div class="demo-toolbar">
+      <!-- Centered macOS-Style OS App Dock -->
+      <div class="os-dock" id="os-dock" role="tablist" aria-label="Demo Application Windows">
+        <button class="dock-app active" data-target="terminal" role="tab" aria-selected="true" title="Terminal CLI (Press 1)">
+          <div class="dock-tile tile-cli">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="4 17 10 11 4 5"></polyline>
+              <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+          </div>
+          <span class="dock-tooltip">Terminal CLI <kbd>1</kbd></span>
+          <span class="dock-dot"></span>
+        </button>
+
+        <button class="dock-app" data-target="github" role="tab" aria-selected="false" title="GitHub PR (Press 2)">
+          <div class="dock-tile tile-gh">
+            <svg viewBox="0 0 16 16" width="22" height="22" fill="currentColor">
+              <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+            </svg>
+          </div>
+          <span class="dock-tooltip">GitHub PR <kbd>2</kbd></span>
+          <span class="dock-dot"></span>
+        </button>
+
+        <button class="dock-app" data-target="gitlab" role="tab" aria-selected="false" title="GitLab MR (Press 3)">
+          <div class="dock-tile tile-gl">
+            <svg viewBox="0 0 16 16" width="22" height="22" fill="currentColor">
+              <path d="M15.97 9.058l-.872-2.684a.426.426 0 00-.81-.005l-.893 2.748H6.598L5.705 6.369a.426.426 0 00-.81.005L4.023 9.058a.426.426 0 00.154.475l5.526 4.015a.426.426 0 00.502 0l5.526-4.015a.426.426 0 00.154-.475z"/>
+            </svg>
+          </div>
+          <span class="dock-tooltip">GitLab MR <kbd>3</kbd></span>
+          <span class="dock-dot"></span>
+        </button>
+      </div>
+
+      <!-- Auto Switch Toggle -->
+      <div class="demo-actions">
+        <button id="auto-director-btn" class="director-mini-toggle active" title="Auto Switch: automatically focuses the active window" aria-pressed="true">
+          <span class="toggle-switch">
+            <span class="toggle-thumb"></span>
+          </span>
+          <span class="toggle-label">Auto Switch</span>
+        </button>
+      </div>
     </div>
-    <div class="demo-media-container">
-      <video id="demo-video-player" autoplay loop muted playsinline poster="assets/hero.jpg" class="demo-video">
-        <source id="video-source" src="assets/demo-terminal.mp4" type="video/mp4">
-      </video>
-      <div id="demo-player" class="demo-asciinema" style="display: none;"></div>
+
+    <!-- Live OS Desktop Stage with 3 Simultaneous Playing Windows (Overlap Mode) -->
+    <div id="os-desktop-stage" class="os-desktop-stage layout-overlap focus-terminal">
+      <!-- Live Cue Toast for Auto Switch -->
+      <div id="demo-cue-toast" class="demo-cue-toast">
+        <span id="cue-text" class="cue-text">Terminal: Submodule changes, bottom-up push &amp; git meta PR creation</span>
+      </div>
+
+      <!-- Window 1: Terminal (Asciicast .cast) -->
+      <div id="win-terminal" class="os-window win-terminal active-win" data-id="terminal" tabindex="0">
+        <div class="window-titlebar">
+          <div class="window-controls">
+            <span class="ctrl-dot dot-close"></span>
+            <span class="ctrl-dot dot-min"></span>
+            <span class="ctrl-dot dot-max"></span>
+          </div>
+          <div class="window-title">
+            <span class="win-icon">💻</span>
+            <span>dev@metastackr — git meta CLI</span>
+          </div>
+        </div>
+        <div class="window-body">
+          <div id="sync-asciinema-player" class="demo-asciinema"></div>
+        </div>
+      </div>
+
+      <!-- Window 2: GitHub PR Matrix (Video .mp4) -->
+      <div id="win-github" class="os-window win-github bg-win-right" data-id="github" tabindex="0">
+        <div class="window-titlebar">
+          <div class="window-controls">
+            <span class="ctrl-dot dot-close"></span>
+            <span class="ctrl-dot dot-min"></span>
+            <span class="ctrl-dot dot-max"></span>
+          </div>
+          <div class="window-title">
+            <span class="win-icon">🐙</span>
+            <span>GitHub — Pull Request #1 &amp; MetaStackr Matrix</span>
+          </div>
+        </div>
+        <div class="window-body">
+          <video id="sync-video-github" muted playsinline loop class="demo-video" preload="auto">
+            <source src="assets/demo-github.webm" type="video/webm">
+            <source src="assets/demo-github.mp4" type="video/mp4">
+          </video>
+        </div>
+      </div>
+
+      <!-- Window 3: GitLab MR Overlay (Video .webm / .mp4) -->
+      <div id="win-gitlab" class="os-window win-gitlab bg-win-left" data-id="gitlab" tabindex="0">
+        <div class="window-titlebar">
+          <div class="window-controls">
+            <span class="ctrl-dot dot-close"></span>
+            <span class="ctrl-dot dot-min"></span>
+            <span class="ctrl-dot dot-max"></span>
+          </div>
+          <div class="window-title">
+            <span class="win-icon">🦊</span>
+            <span>GitLab — Merge Request !1 &amp; MetaStackr Sync</span>
+          </div>
+        </div>
+        <div class="window-body">
+          <video id="sync-video-gitlab" muted playsinline loop class="demo-video" preload="auto">
+            <source src="assets/demo-gitlab.webm" type="video/webm">
+            <source src="assets/demo-gitlab.mp4" type="video/mp4">
+          </video>
+        </div>
+      </div>
     </div>
+
+    <!-- Unified Synchronized Player Controls -->
+    <div class="sync-controls-bar">
+      <button id="sync-play-btn" class="ctrl-btn play-btn" aria-label="Play or Pause">
+        <svg id="play-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+          <path d="M8 5v14l11-7z"/>
+        </svg>
+        <svg id="pause-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display: none;">
+          <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+        </svg>
+      </button>
+
+      <span class="ctrl-time" id="sync-time-display">00:00 / 00:00</span>
+
+      <div class="ctrl-scrubber-wrapper">
+        <input type="range" id="sync-timeline-scrubber" min="0" max="100" value="0" step="0.1" class="sync-scrubber" aria-label="Timeline progress" />
+      </div>
+
+      <div class="ctrl-speed-dropdown">
+        <select id="sync-speed-select" class="ctrl-select" aria-label="Playback Speed">
+          <option value="0.75">0.75x</option>
+          <option value="1" selected>1.0x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2">2.0x</option>
+        </select>
+      </div>
+    </div>
+
     <div class="caption">
 {{DEMO_CAPTION}}
     </div>
   </section>
 
-  <section id="get-going" class="get-going">
-{{GET_GOING}}
+  <section id="flow" class="flow-section">
+{{FLOW}}
+  </section>
+
+  <section id="comparison" class="comparison-section">
+{{COMPARISON}}
   </section>
 
   <section id="features" class="features">
@@ -94,12 +230,12 @@
 {{EXTENSIONS}}
   </section>
 
-  <section id="agents" class="agents">
-{{AGENTS}}
+  <section id="cli" class="cli">
+{{CLI}}
   </section>
 
-  <section id="config" class="config">
-{{CONFIG}}
+  <section id="agents" class="agents">
+{{AGENTS}}
   </section>
 
 </main>
@@ -111,71 +247,363 @@
 <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.min.js"></script>
 <script>
   (function() {
-    const video = document.getElementById('demo-video-player');
-    const videoSource = document.getElementById('video-source');
-    const asciinemaEl = document.getElementById('demo-player');
-    const tabs = document.querySelectorAll('.tab-btn');
-    let asciinemaPlayer = null;
+    // -------------------------------------------------------------------
+    // 3-Way Simultaneous Synchronized Media Engine & OS Window Manager
+    // -------------------------------------------------------------------
+    const stage = document.getElementById('os-desktop-stage');
+    const winTerminal = document.getElementById('win-terminal');
+    const winGitHub = document.getElementById('win-github');
+    const winGitLab = document.getElementById('win-gitlab');
+    const windows = [winTerminal, winGitHub, winGitLab];
 
-    function initAsciinema() {
-      if (video) video.style.display = 'none';
+    const vGH = document.getElementById('sync-video-github');
+    const vGL = document.getElementById('sync-video-gitlab');
+    const asciinemaEl = document.getElementById('sync-asciinema-player');
+
+    const playBtn = document.getElementById('sync-play-btn');
+    const playIcon = document.getElementById('play-icon');
+    const pauseIcon = document.getElementById('pause-icon');
+    const timeDisplay = document.getElementById('sync-time-display');
+    const scrubber = document.getElementById('sync-timeline-scrubber');
+    const speedSelect = document.getElementById('sync-speed-select');
+    const dockBtns = document.querySelectorAll('#os-dock .dock-app, #os-dock .dock-btn');
+
+    const autoDirectorBtn = document.getElementById('auto-director-btn');
+    const cueToast = document.getElementById('demo-cue-toast');
+    const cueText = document.getElementById('cue-text');
+
+    let asciinemaPlayer = null;
+    let isPlaying = false;
+    let currentFocus = 'terminal'; // 'terminal', 'github', 'gitlab'
+    let autoDirectorEnabled = true;
+    let playbackSpeed = 1.0;
+    let masterDuration = 60.0;
+    let isScrubbing = false;
+    let syncInterval = null;
+    let lastCueIndex = -1;
+
+    // Choreographed Timeline Cues for Auto Switch (exact timings from synchronized demo recording)
+    const demoCues = [
+      { time: 0, target: 'terminal', text: 'Terminal: Submodule changes, drift detection, bottom-up push & PR creation' },
+      { time: 52, target: 'github', text: 'Browser: Inspecting Submodule Diffs, MetaStackr Matrix & Merging Child PR #1' },
+      { time: 85, target: 'terminal', text: 'Terminal & Browser: Live tracking & merging Child PR #2 via CLI' },
+      { time: 110, target: 'github', text: 'Browser: All Child PRs Merged → Cascade Auto-Merge completes' },
+      { time: 130, target: 'terminal', text: 'Terminal: git meta checkout main & git meta sync aligns submodules' }
+    ];
+
+    function formatTime(sec) {
+      if (!sec || isNaN(sec) || sec < 0) sec = 0;
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    // Initialize all 3 media players simultaneously
+    function initAllPlayers() {
+      // 1. Terminal (Asciinema)
       if (asciinemaEl) {
-        asciinemaEl.style.display = 'block';
-        if (!asciinemaPlayer) {
-          asciinemaPlayer = AsciinemaPlayer.create('assets/demo.cast', asciinemaEl, {
-            autoPlay: true,
+        asciinemaEl.innerHTML = '';
+        try {
+          asciinemaPlayer = AsciinemaPlayer.create('assets/demo-github.cast', asciinemaEl, {
+            autoPlay: false,
             loop: true,
             controls: false,
-            fit: 'width'
+            speed: playbackSpeed,
+            fit: 'both',
+            terminalFontFamily: 'var(--font-mono)'
           });
+        } catch (e) {
+          try {
+            asciinemaPlayer = AsciinemaPlayer.create('assets/demo.cast', asciinemaEl, {
+              autoPlay: false,
+              loop: true,
+              controls: false,
+              speed: playbackSpeed,
+              fit: 'both',
+              terminalFontFamily: 'var(--font-mono)'
+            });
+          } catch (err) {}
+        }
+      }
+
+      // 2. GitHub Video
+      if (vGH) {
+        vGH.playbackRate = playbackSpeed;
+        vGH.addEventListener('loadedmetadata', () => {
+          if (vGH.duration && !isNaN(vGH.duration)) masterDuration = vGH.duration;
+        });
+        vGH.load();
+      }
+
+      // 3. GitLab Video
+      if (vGL) {
+        vGL.playbackRate = playbackSpeed;
+        vGL.addEventListener('loadedmetadata', () => {
+          if (vGL.duration && !isNaN(vGL.duration)) masterDuration = Math.max(masterDuration, vGL.duration);
+        });
+        vGL.load();
+      }
+    }
+
+    // Play / Pause Master State across all 3
+    function setPlayingState(play) {
+      isPlaying = play;
+      if (play) {
+        if (playIcon) playIcon.style.display = 'none';
+        if (pauseIcon) pauseIcon.style.display = 'block';
+        if (vGH) {
+          const p = vGH.play();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        }
+        if (vGL) {
+          const p = vGL.play();
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        }
+        if (asciinemaPlayer && typeof asciinemaPlayer.play === 'function') {
+          asciinemaPlayer.play();
+        }
+      } else {
+        if (playIcon) playIcon.style.display = 'block';
+        if (pauseIcon) pauseIcon.style.display = 'none';
+        if (vGH) vGH.pause();
+        if (vGL) vGL.pause();
+        if (asciinemaPlayer && typeof asciinemaPlayer.pause === 'function') {
+          asciinemaPlayer.pause();
         }
       }
     }
 
-    if (video) {
-      video.onerror = function() {
-        const currentActive = document.querySelector('.tab-btn.active');
-        if (currentActive && currentActive.dataset.tab === 'terminal') {
-          initAsciinema();
-        }
-      };
+    if (playBtn) {
+      playBtn.addEventListener('click', () => {
+        setPlayingState(!isPlaying);
+      });
     }
 
-    tabs.forEach(tab => {
-      tab.addEventListener('click', function() {
-        tabs.forEach(t => t.classList.remove('active'));
-        this.classList.add('active');
-        const target = this.dataset.tab;
+    // Seek all 3 players to target second
+    function seekAll(targetSeconds) {
+      if (vGH) vGH.currentTime = targetSeconds;
+      if (vGL) vGL.currentTime = targetSeconds;
+      if (asciinemaPlayer && typeof asciinemaPlayer.seek === 'function') {
+        asciinemaPlayer.seek(targetSeconds);
+      }
+    }
 
-        if (target === 'terminal') {
-          if (videoSource && video) {
-            video.style.display = 'block';
-            if (asciinemaEl) asciinemaEl.style.display = 'none';
-            videoSource.src = 'assets/demo-terminal.mp4';
-            video.load();
-            video.play().catch(initAsciinema);
-          } else {
-            initAsciinema();
+    // Continuous 3-Way Sync & Auto-Director Loop
+    function startMasterSyncLoop() {
+      if (syncInterval) clearInterval(syncInterval);
+
+      syncInterval = setInterval(() => {
+        const ghTime = vGH ? (vGH.currentTime || 0) : 0;
+        const glTime = vGL ? (vGL.currentTime || 0) : 0;
+
+        let aTime = ghTime;
+        if (asciinemaPlayer && typeof asciinemaPlayer.getCurrentTime === 'function') {
+          const t = asciinemaPlayer.getCurrentTime();
+          if (typeof t === 'number' && !isNaN(t)) aTime = t;
+        }
+
+        const ghDur = vGH ? (vGH.duration || 0) : 0;
+        const glDur = vGL ? (vGL.duration || 0) : 0;
+        if (ghDur && !isNaN(ghDur) && ghDur > 0) masterDuration = ghDur;
+        else if (glDur && !isNaN(glDur) && glDur > 0) masterDuration = glDur;
+
+        // Master current time
+        const curTime = ghTime || glTime || aTime;
+
+        // Drift correction: lock GitLab video and Asciinema to GitHub master
+        if (isPlaying) {
+          if (vGL && Math.abs(glTime - ghTime) > 0.35) {
+            vGL.currentTime = ghTime;
           }
-        } else if (target === 'github') {
-          if (asciinemaEl) asciinemaEl.style.display = 'none';
-          if (video && videoSource) {
-            video.style.display = 'block';
-            videoSource.src = 'assets/demo-github.mp4';
-            video.load();
-            video.play().catch(() => {});
+          if (asciinemaPlayer && typeof asciinemaPlayer.seek === 'function') {
+            if (Math.abs(aTime - ghTime) > 0.35) {
+              asciinemaPlayer.seek(ghTime);
+            }
           }
-        } else if (target === 'gitlab') {
-          if (asciinemaEl) asciinemaEl.style.display = 'none';
-          if (video && videoSource) {
-            video.style.display = 'block';
-            videoSource.src = 'assets/demo-gitlab.mp4';
-            video.load();
-            video.play().catch(() => {});
+        }
+
+        // Update timeline progress scrubber and timestamp
+        if (!isScrubbing && scrubber) {
+          const pct = masterDuration > 0 ? (curTime / masterDuration) * 100 : 0;
+          scrubber.value = pct;
+        }
+
+        if (timeDisplay) {
+          timeDisplay.textContent = `${formatTime(curTime)} / ${formatTime(masterDuration)}`;
+        }
+
+        // Auto-Director: Evaluates timeline cues and swaps active window automatically
+        if (autoDirectorEnabled) {
+          for (let i = demoCues.length - 1; i >= 0; i--) {
+            if (curTime >= demoCues[i].time) {
+              if (lastCueIndex !== i) {
+                lastCueIndex = i;
+                const cue = demoCues[i];
+                focusWindow(cue.target, false); // auto-switch
+                if (cueText) cueText.textContent = cue.text;
+                if (cueToast) {
+                  cueToast.classList.add('visible');
+                  setTimeout(() => cueToast.classList.remove('visible'), 4000);
+                }
+              }
+              break;
+            }
           }
+        }
+
+        // Loop handler
+        if (masterDuration > 0 && curTime >= masterDuration - 0.2) {
+          seekAll(0);
+          lastCueIndex = -1;
+          if (isPlaying) setPlayingState(true);
+        }
+      }, 150);
+    }
+
+    // Scrubber dragging
+    if (scrubber) {
+      scrubber.addEventListener('mousedown', () => { isScrubbing = true; });
+      scrubber.addEventListener('touchstart', () => { isScrubbing = true; });
+
+      scrubber.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        const targetSec = (val / 100) * masterDuration;
+        if (timeDisplay) {
+          timeDisplay.textContent = `${formatTime(targetSec)} / ${formatTime(masterDuration)}`;
+        }
+      });
+
+      scrubber.addEventListener('change', (e) => {
+        isScrubbing = false;
+        const val = parseFloat(e.target.value);
+        const targetSec = (val / 100) * masterDuration;
+        seekAll(targetSec);
+      });
+
+      scrubber.addEventListener('mouseup', () => { isScrubbing = false; });
+      scrubber.addEventListener('touchend', () => { isScrubbing = false; });
+    }
+
+    // Speed Selector
+    if (speedSelect) {
+      speedSelect.addEventListener('change', (e) => {
+        playbackSpeed = parseFloat(e.target.value);
+        if (vGH) vGH.playbackRate = playbackSpeed;
+        if (vGL) vGL.playbackRate = playbackSpeed;
+        const cur = vGH ? vGH.currentTime : 0;
+        initAllPlayers();
+        seekAll(cur);
+        if (isPlaying) setPlayingState(true);
+      });
+    }
+
+    // -------------------------------------------------------------------
+    // OS Window Stacking & Focus Management
+    // -------------------------------------------------------------------
+    function focusWindow(targetId, userTriggered = true) {
+      currentFocus = targetId;
+
+      // Update Dock indicators
+      dockBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.target === targetId);
+      });
+
+      // Update Stage classes
+      stage.classList.remove('focus-terminal', 'focus-github', 'focus-gitlab');
+      stage.classList.add(`focus-${targetId}`);
+
+      // Update Window layering and z-indexes
+      windows.forEach(w => {
+        w.classList.remove('active-win', 'bg-win-left', 'bg-win-right');
+      });
+
+      const activeEl = document.getElementById(`win-${targetId}`);
+      if (activeEl) activeEl.classList.add('active-win');
+
+      if (targetId === 'terminal') {
+        winGitHub.classList.add('bg-win-right');
+        winGitLab.classList.add('bg-win-left');
+      } else if (targetId === 'github') {
+        winTerminal.classList.add('bg-win-left');
+        winGitLab.classList.add('bg-win-right');
+      } else if (targetId === 'gitlab') {
+        winTerminal.classList.add('bg-win-left');
+        winGitHub.classList.add('bg-win-right');
+      }
+
+      // If clicked manually by user, show quick toast indicator
+      if (userTriggered) {
+        if (cueText) {
+          cueText.textContent = targetId === 'terminal'
+            ? 'Terminal CLI (git meta)'
+            : (targetId === 'github' ? 'GitHub PR & MetaStackr Matrix' : 'GitLab MR Overlay');
+        }
+        if (cueToast) {
+          cueToast.classList.add('visible');
+          setTimeout(() => cueToast.classList.remove('visible'), 2500);
+        }
+      }
+
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 150);
+    }
+
+    // Click anywhere on an OS window to bring it forward
+    windows.forEach(win => {
+      win.addEventListener('click', (e) => {
+        const id = win.dataset.id;
+        if (id && currentFocus !== id) {
+          focusWindow(id, true);
         }
       });
     });
+
+    // Dock buttons click handler
+    dockBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        focusWindow(btn.dataset.target, true);
+      });
+    });
+
+    // Auto-Director Mini Toggle
+    if (autoDirectorBtn) {
+      autoDirectorBtn.addEventListener('click', () => {
+        autoDirectorEnabled = !autoDirectorEnabled;
+        autoDirectorBtn.classList.toggle('active', autoDirectorEnabled);
+        autoDirectorBtn.setAttribute('aria-pressed', autoDirectorEnabled ? 'true' : 'false');
+      });
+    }
+
+    // Keyboard Shortcuts: Space (Play/Pause), Left/Right (Seek), 1/2/3 (Focus Window)
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setPlayingState(!isPlaying);
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        seekAll(Math.min(masterDuration, (vGH ? vGH.currentTime : 0) + 5));
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        seekAll(Math.max(0, (vGH ? vGH.currentTime : 0) - 5));
+      } else if (e.key === '1') {
+        focusWindow('terminal', true);
+      } else if (e.key === '2') {
+        focusWindow('github', true);
+      } else if (e.key === '3') {
+        focusWindow('gitlab', true);
+      }
+    });
+
+    // Boot players and sync monitor
+    initAllPlayers();
+    startMasterSyncLoop();
+
+    // Auto-start playback on load (browsers permit muted video autoplay)
+    setTimeout(() => {
+      setPlayingState(true);
+    }, 400);
   })();
 </script>
 </body>

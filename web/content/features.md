@@ -1,40 +1,34 @@
-### Optimistic SQL Locking
+### Optimistic Concurrency Control
 
-Reconciliation loops enforce strict `lock_version` verification to eliminate race conditions on meta PR updates.
-
----
-
-### Bottom-Up Pushes
-
-CLI guarantees submodule changes are pushed to remote origins before updating parent pointer commits.
+Reconciliation loops enforce strict `lock_version` validation to eliminate race conditions during high-volume webhook deliveries.
 
 ---
 
-### DAG Cycle Detection
+### Topological DAG Resolution
 
-Builds a Directed Acyclic Graph of dependencies, aborting immediately with `ErrCycleDetected` if a loop occurs.
-
----
-
-### Saga Cascade Merge
-
-Executes merges topologically in parallel depth batches, halting on conflicts without force-reverting base branches.
+Evaluates multi-repo dependency graphs in real time, determining optimal merge order and aborting immediately if a circular dependency is detected.
 
 ---
 
-### Single Checks Matrix
+### Fault-Tolerant Saga Protocol
 
-Maintains a single GitHub Check Run named `meta-repo/sync` with a clean markdown matrix table showing approvals and CI.
-
----
-
-### Git Hooks Drift Check
-
-Installs `post-checkout` and `pre-commit` hooks in `.git/hooks` to verify submodule alignment and detached HEAD states.
+Executes merges topologically in parallel depth batches, halting safely on conflicts without force-reverting base branches.
 
 ---
 
-### Privacy-by-Default
+### Unified Checks Matrix
 
-Operates strictly on Git metadata (branches/SHAs) without pulling source code. Toggle `allowCodePull: true` to opt-in for dry-run merges and static analysis.
+Consolidates submodule approvals, branch pointer alignments, and CI statuses into a single GitHub Check Run named `meta-repo/sync`.
+
+---
+
+### Proactive Git Hooks
+
+Installs `post-checkout` and `pre-commit` hooks in `.git/hooks` to verify submodule branch alignment and alert on detached HEAD states locally.
+
+---
+
+### Zero-Trust Privacy
+
+Operates strictly on Git metadata (branch names and commit SHAs) by default without pulling or storing your source code on remote servers.
 

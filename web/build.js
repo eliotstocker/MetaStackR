@@ -29,27 +29,42 @@ function renderExtensions(md) {
   return `${marked.parse(headerMd.trim())}\n  <div class="features extension-grid">\n${cards}\n  </div>`
 }
 
+function renderFlow(md) {
+  const parts = md.trim().split(/\n---\n/)
+  const headerMd = parts[0]
+  const steps = parts.slice(1).map((block, idx) => `    <div class="flow-step">\n      <div class="step-num">0${idx + 1}</div>\n      <div class="step-content">\n${marked.parse(block.trim())}      </div>\n    </div>`).join('\n')
+  return `${marked.parse(headerMd.trim())}\n  <div class="flow-grid">\n${steps}\n  </div>`
+}
+
+function renderCli(md) {
+  const content = md.replace(/^---[\s\S]*?---\s*/, '')
+  return marked.parse(content.trim())
+}
+
 const template = fs.readFileSync(TEMPLATE_PATH, 'utf8')
 
 const output = template
   .replace('{{HERO}}', marked.parse(readMd('hero.md')))
   .replace('{{DEMO_CAPTION}}', marked.parse(readMd('demo-caption.md')))
-  .replace('{{GET_GOING}}', marked.parse(readMd('get-going.md')))
+  .replace('{{FLOW}}', renderFlow(readMd('flow.md')))
+  .replace('{{COMPARISON}}', marked.parse(readMd('comparison.md')))
   .replace('{{FEATURES}}', renderFeatures(readMd('features.md')))
   .replace('{{EXTENSIONS}}', renderExtensions(readMd('extensions.md')))
   .replace('{{AGENTS}}', marked.parse(readMd('agents.md')))
-  .replace('{{CONFIG}}', marked.parse(readMd('config.md')))
+  .replace('{{CLI}}', renderCli(readMd('cli.md')))
 
 fs.writeFileSync(OUTPUT_PATH, output)
 
 const configDetailsOutput = template
-  .replace(/<section id="config" class="config">[\s\S]*?<\/section>/, `<section id="config" class="config">\n${marked.parse(readMd('config-details.md'))}    </section>`)
+  .replace(/<section id="cli" class="cli">[\s\S]*?<\/section>/, `<section id="config" class="config">\n${marked.parse(readMd('config-details.md'))}    </section>`)
   .replace(/\s*<section class="hero">[\s\S]*?<\/section>/, '')
   .replace(/\s*<section class="demo">[\s\S]*?<\/section>/, '')
-  .replace(/\s*<section id="get-going" class="get-going">[\s\S]*?<\/section>/, '')
+  .replace(/\s*<section id="flow" class="flow-section">[\s\S]*?<\/section>/, '')
+  .replace(/\s*<section id="comparison" class="comparison-section">[\s\S]*?<\/section>/, '')
   .replace(/\s*<section id="features" class="features">[\s\S]*?<\/section>/, '')
   .replace(/\s*<section id="extensions" class="extensions">[\s\S]*?<\/section>/, '')
   .replace(/\s*<section id="agents" class="agents">[\s\S]*?<\/section>/, '')
+  .replace(/<script src="https:\/\/cdn\.jsdelivr\.net\/npm\/asciinema-player[\s\S]*?<\/script>\s*<script>[\s\S]*?<\/script>/, '')
 
 fs.writeFileSync(CONFIG_DETAILS_PATH, configDetailsOutput)
 

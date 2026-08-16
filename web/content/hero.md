@@ -1,5 +1,6 @@
-# One command. MetaStackR for You and Your Agent
+# Multi-Repo Simplicity. Zero Submodule Friction.
 
-An event-driven orchestration system and custom CLI (`git-meta`) that manages multiple submodules transparently. 
-Track local submodule drift, perform bottom-up pushes to prevent dangling pointers, and merge atomically using parallel depth-batch cascade merges topologically.
-Built with database optimistic locking and GitHub Checks integration to keep development completely aligned.
+**Coordinate multi-repository features across Git submodules effortlessly.**
+MetaStackr automates cross-repo synchronization from local branches to production merges—enforcing bottom-up atomic pushes, preventing broken pointer drift, and cascading PR merges topologically.
+
+*Mono-repo coordination with multi-repo independence—built for developer teams and AI coding agents.*

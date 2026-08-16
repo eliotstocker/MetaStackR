@@ -27,3 +27,6 @@ extensions/jetbrains/.gradle/
 .idea/
 .vscode/
 *.log
+scratch/
+demo-output/
+demo-gitlab-meta

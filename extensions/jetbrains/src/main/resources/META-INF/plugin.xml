@@ -4,15 +4,71 @@
     <vendor email="support@metastackr.com" url="https://metastackr.com">MetaStackr</vendor>
 
     <description><![CDATA[
-    Meta-Repo orchestration tools. Intercepts commit actions to prompt coordinated git-meta commits.
+    Unified Multi-Repo & Submodule Orchestration for JetBrains IDEs.
+    Provides worktree change monitoring, staging/unstaging with git add, coordinated atomic commits, bottom-up pushes, and automatic submodule pointer alignment.
+    Replaces default Git VCS in initialized MetaStackr projects to prevent duplicate source control views.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.vcs</depends>
     <depends>Git4Idea</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <vcs name="MetaStackr" vcsClass="com.metastackr.plugin.MetaStackrVcs"/>
+        <postStartupActivity implementation="com.metastackr.plugin.MetaStartupActivity"/>
         <checkinHandlerFactory implementation="com.metastackr.plugin.MetaCheckinHandlerFactory"/>
+        <toolWindow id="MetaStackr" 
+                    anchor="bottom" 
+                    factoryClass="com.metastackr.plugin.MetaToolWindowFactory" 
+                    icon="AllIcons.Vcs.Branch"
+                    canCloseContent="true"/>
     </extensions>
+
+    <actions>
+        <group id="MetaStackr.Menu" text="MetaStackr" popup="true" icon="AllIcons.Vcs.Branch">
+            <add-to-group group-id="VcsGroups" anchor="last"/>
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            
+            <action id="com.metastackr.plugin.MetaInitAction"
+                    class="com.metastackr.plugin.MetaInitAction"
+                    text="Initialize MetaStackr Repository"
+                    description="Initialize repository with MetaStackr hooks and tracking"/>
+            
+            <separator/>
+
+            <action id="com.metastackr.plugin.MetaCommitAction"
+                    class="com.metastackr.plugin.MetaCommitAction"
+                    text="Commit (MetaStackr Atomic)"
+                    description="Atomic commit across all submodules or staged changes"/>
+
+            <action id="com.metastackr.plugin.MetaStageAllAction"
+                    class="com.metastackr.plugin.MetaStageAllAction"
+                    text="Stage All Changes"
+                    description="Stage all changes across root and submodules with git add -A"/>
+
+            <action id="com.metastackr.plugin.MetaUnstageAllAction"
+                    class="com.metastackr.plugin.MetaUnstageAllAction"
+                    text="Unstage All Changes"
+                    description="Unstage all changes across worktree"/>
+
+            <separator/>
+
+            <action id="com.metastackr.plugin.MetaPushAction"
+                    class="com.metastackr.plugin.MetaPushAction"
+                    text="Push (Bottom-Up Enforcement)"
+                    description="Enforce bottom-up pushing across submodules and root"/>
+
+            <action id="com.metastackr.plugin.MetaSyncAction"
+                    class="com.metastackr.plugin.MetaSyncAction"
+                    text="Sync Submodules"
+                    description="Fetch upstream and fast-forward submodules"/>
+
+            <action id="com.metastackr.plugin.MetaCheckoutAction"
+                    class="com.metastackr.plugin.MetaCheckoutAction"
+                    text="Checkout Branch"
+                    description="Switch or create branch system-wide across all submodules"/>
+        </group>
+    </actions>
 
     <projectListeners>
         <listener class="com.metastackr.plugin.MetaVCSListener"

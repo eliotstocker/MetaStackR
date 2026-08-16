@@ -364,21 +364,26 @@
     }
 
     let tabList = document.querySelector(
-      '[class*="TabNavList"], nav[aria-label*="Pull request"] > div, nav[aria-label*="Pull request"] > ul, nav[aria-label*="Pull request navigation"] > div, nav[aria-label*="Pull request navigation"] > ul, .tabnav-tabs, ' +
+      '[class*="TabNavList"], nav[aria-label*="Pull request"] > div, nav[aria-label*="Pull request"] > ul, nav[aria-label*="Pull request navigation"] > div, nav[aria-label*="Pull request navigation"] > ul, nav[aria-label*="Pull request tabs"] > div, nav[aria-label*="Pull request tabs"] > ul, .tabnav-tabs, ' +
       'ul.mr-tabs, ul.nav-tabs, nav.tabs-wrapper, .merge-request-tabs, [data-testid="mr-tabs"], .gl-tabs-nav, ul.gl-tabs-nav, ' +
       '[data-testid="merge-request-tabs"], .issuable-tabs, .tabs-holder ul, .merge-request-tabs-container ul, .js-tabs-affix ul, [role="tablist"]'
     );
 
     if (!tabList) {
-      const anyTabLink = document.querySelector('.notes-tab, .commits-tab, .pipelines-tab, .diffs-tab, .gl-tab-nav-item, a[href*="#notes"], a[href*="#diffs"], a[href*="merge_requests"]');
+      const anyTabLink = document.querySelector(
+        '.notes-tab, .commits-tab, .pipelines-tab, .diffs-tab, .gl-tab-nav-item, ' +
+        'a[href*="#notes"], a[href*="#diffs"], a[href*="merge_requests"], ' +
+        'a[href$="/commits"], a[href$="/files"], a[href$="/checks"], a[href*="/files/"], ' +
+        '#conversation-tab, #commits-tab, #files-tab, #checks-tab, [data-tab-item="conversation"], [data-tab-item="commits"]'
+      );
       if (anyTabLink) {
         tabList = anyTabLink.closest('ul, nav, [role="tablist"]') || anyTabLink.parentElement;
       }
     }
 
     if (!tabList) {
-      if (retryCount < 10) {
-        setTimeout(() => injectSubmodulesTab(metaPR, repoFullName, prNumber, retryCount + 1), 300);
+      if (retryCount < 20) {
+        setTimeout(() => injectSubmodulesTab(metaPR, repoFullName, prNumber, retryCount + 1), 250);
       }
       return;
     }
@@ -544,9 +549,31 @@
     const matrixTitleText = isGitLab ? 'Submodule Merge Request Matrix' : 'Submodule Synchronization Matrix';
     const colPrText = isGitLab ? 'MR !' : 'PR #';
 
-    const list = (childPRs && childPRs.length > 0)
+    const rawList = (childPRs && childPRs.length > 0)
       ? childPRs
       : (metaPR ? (metaPR.child_prs || metaPR.childPRs || []) : []);
+
+    // Filter child PRs to only those belonging to the current meta repository context
+    const seenPaths = new Set();
+    const list = [];
+    const metaPrefix = targetRepo ? targetRepo.replace(/-root$/, '') : '';
+
+    for (let i = rawList.length - 1; i >= 0; i--) {
+      const child = rawList[i];
+      const repo = child.repo_full_name || child.repoFullName || child.repo || child.RepoFullName || '';
+      const path = child.submodule_path || child.submodulePath || child.path || child.SubmodulePath || '';
+      
+      const isCurrentMetaRepo = metaPrefix ? repo.includes(metaPrefix) : true;
+      const isParentItself = repo.toLowerCase() === targetRepo.toLowerCase();
+
+      if (isCurrentMetaRepo && !isParentItself) {
+        const dedupeKey = path || repo;
+        if (!seenPaths.has(dedupeKey)) {
+          seenPaths.add(dedupeKey);
+          list.unshift(child);
+        }
+      }
+    }
 
     let rowsHtml = '';
     (list || []).forEach(child => {

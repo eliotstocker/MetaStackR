@@ -452,6 +452,7 @@ func newCheckoutCmd() *cobra.Command {
 
 func newCommitCmd() *cobra.Command {
 	var message string
+	var stagedOnly bool
 
 	cmd := &cobra.Command{
 		Use:   "commit",
@@ -462,7 +463,7 @@ func newCommitCmd() *cobra.Command {
 				return err
 			}
 
-			err = gitutils.CommitAtomic(cwd, message)
+			err = gitutils.CommitAtomic(cwd, message, stagedOnly)
 			if err != nil {
 				if jsonOutput {
 					printJSON(false, err.Error(), nil)
@@ -481,6 +482,7 @@ func newCommitCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Commit message")
+	cmd.Flags().BoolVar(&stagedOnly, "staged", false, "Only commit changes that are already staged in the index")
 	_ = cmd.MarkFlagRequired("message")
 
 	return cmd

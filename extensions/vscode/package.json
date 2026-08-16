@@ -4,6 +4,10 @@
   "description": "Unified VS Code Source Control Manager (SCM) for Git submodules.",
   "version": "1.0.0",
   "publisher": "eliotstocker",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eliotstocker/MetaStackr"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -15,33 +19,165 @@
   ],
   "main": "./extension.js",
   "contributes": {
+    "configuration": {
+      "title": "MetaStackr",
+      "properties": {
+        "metastackr.autoDisableBuiltinGit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically disable the built-in Git extension in initialized MetaStackr workspaces to prevent duplicate source control views."
+        }
+      }
+    },
     "commands": [
       {
+        "command": "metastackr.init",
+        "title": "MetaStackr: Initialize Repository",
+        "icon": "$(plus)"
+      },
+      {
         "command": "metastackr.commit",
-        "title": "MetaStackr: Atomic Commit"
+        "title": "MetaStackr: Commit",
+        "icon": "$(check)"
+      },
+      {
+        "command": "metastackr.commitStaged",
+        "title": "MetaStackr: Commit Staged (--staged)"
+      },
+      {
+        "command": "metastackr.commitAll",
+        "title": "MetaStackr: Commit All (Atomic)"
+      },
+      {
+        "command": "metastackr.refresh",
+        "title": "MetaStackr: Refresh Status",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "metastackr.stage",
+        "title": "Stage Changes",
+        "icon": "$(plus)"
+      },
+      {
+        "command": "metastackr.unstage",
+        "title": "Unstage Changes",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "metastackr.stageAll",
+        "title": "Stage All Changes",
+        "icon": "$(plus)"
+      },
+      {
+        "command": "metastackr.unstageAll",
+        "title": "Unstage All Changes",
+        "icon": "$(remove)"
       },
       {
         "command": "metastackr.checkout",
         "title": "MetaStackr: Checkout Branch"
       },
       {
+        "command": "metastackr.push",
+        "title": "MetaStackr: Push (Bottom-Up)",
+        "icon": "$(arrow-up)"
+      },
+      {
         "command": "metastackr.sync",
-        "title": "MetaStackr: Sync Submodules"
+        "title": "MetaStackr: Sync Submodules",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "metastackr.openFile",
+        "title": "Open File"
       }
     ],
     "menus": {
-      "commandPalette": [
+      "scm/title": [
         {
           "command": "metastackr.commit",
-          "when": "config.metastackr.enabled"
+          "group": "navigation",
+          "when": "scmProvider == metastackr"
         },
         {
-          "command": "metastackr.checkout",
-          "when": "config.metastackr.enabled"
+          "command": "metastackr.refresh",
+          "group": "navigation",
+          "when": "scmProvider == metastackr"
+        },
+        {
+          "command": "metastackr.push",
+          "group": "navigation",
+          "when": "scmProvider == metastackr"
         },
         {
           "command": "metastackr.sync",
-          "when": "config.metastackr.enabled"
+          "group": "navigation",
+          "when": "scmProvider == metastackr"
+        }
+      ],
+      "scm/resourceGroup/context": [
+        {
+          "command": "metastackr.stageAll",
+          "when": "scmProvider == metastackr && scmResourceGroup == changes",
+          "group": "inline"
+        },
+        {
+          "command": "metastackr.unstageAll",
+          "when": "scmProvider == metastackr && scmResourceGroup == staged",
+          "group": "inline"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "metastackr.stage",
+          "when": "scmProvider == metastackr && scmResourceState == changeResource",
+          "group": "inline"
+        },
+        {
+          "command": "metastackr.unstage",
+          "when": "scmProvider == metastackr && scmResourceState == stagedResource",
+          "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "metastackr.init"
+        },
+        {
+          "command": "metastackr.commit",
+          "when": "metastackr.isInitialized"
+        },
+        {
+          "command": "metastackr.commitStaged",
+          "when": "metastackr.isInitialized"
+        },
+        {
+          "command": "metastackr.commitAll",
+          "when": "metastackr.isInitialized"
+        },
+        {
+          "command": "metastackr.refresh",
+          "when": "metastackr.isInitialized"
+        },
+        {
+          "command": "metastackr.stageAll",
+          "when": "metastackr.isInitialized"
+        },
+        {
+          "command": "metastackr.unstageAll",
+          "when": "metastackr.isInitialized"
+        },
+        {
+          "command": "metastackr.checkout",
+          "when": "metastackr.isInitialized"
+        },
+        {
+          "command": "metastackr.push",
+          "when": "metastackr.isInitialized"
+        },
+        {
+          "command": "metastackr.sync",
+          "when": "metastackr.isInitialized"
         }
       ]
     }

@@ -5,7 +5,7 @@ title: Get Started in Seconds
 
 ## Quick Start Installation Guide
 
-Follow these steps to compile and install `git-meta` and launch the `metastackrd` daemon:
+Follow these steps to compile and install `git meta` and launch the `metastackrd` daemon:
 
 ```bash
 # 1. Clone repository & build

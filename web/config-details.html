@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>metastackr — meta-repo orchestration platform</title>
-<meta name="description" content="An event-driven meta-repo orchestration platform with custom git-meta CLI and PostgreSQL DAG cascade merge engine." />
+<meta name="description" content="An event-driven meta-repo orchestration platform with custom git meta CLI and PostgreSQL DAG cascade merge engine." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@100;400;500;700&display=swap" />
@@ -30,9 +30,11 @@
           </a>
         </div>
       </div>
+      <a href="#flow">How It Works</a>
+      <a href="#comparison">Why Tho?</a>
       <a href="#features">Features</a>
       <a href="#extensions">Extensions</a>
-      <a href="#config">Config</a>
+      <a href="#cli">CLI Commands</a>
       <a href="#agents">Agents</a>
       <a href="https://github.com/eliotstocker/MetaStackr">GitHub</a>
     </nav>
@@ -70,75 +72,6 @@
   <p>MIT licensed. <a href="https://github.com/eliotstocker/MetaStackr">github.com/eliotstocker/MetaStackr</a></p>
 </footer>
 
-<script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.17.0/dist/bundle/asciinema-player.min.js"></script>
-<script>
-  (function() {
-    const video = document.getElementById('demo-video-player');
-    const videoSource = document.getElementById('video-source');
-    const asciinemaEl = document.getElementById('demo-player');
-    const tabs = document.querySelectorAll('.tab-btn');
-    let asciinemaPlayer = null;
 
-    function initAsciinema() {
-      if (video) video.style.display = 'none';
-      if (asciinemaEl) {
-        asciinemaEl.style.display = 'block';
-        if (!asciinemaPlayer) {
-          asciinemaPlayer = AsciinemaPlayer.create('assets/demo.cast', asciinemaEl, {
-            autoPlay: true,
-            loop: true,
-            controls: false,
-            fit: 'width'
-          });
-        }
-      }
-    }
-
-    if (video) {
-      video.onerror = function() {
-        const currentActive = document.querySelector('.tab-btn.active');
-        if (currentActive && currentActive.dataset.tab === 'terminal') {
-          initAsciinema();
-        }
-      };
-    }
-
-    tabs.forEach(tab => {
-      tab.addEventListener('click', function() {
-        tabs.forEach(t => t.classList.remove('active'));
-        this.classList.add('active');
-        const target = this.dataset.tab;
-
-        if (target === 'terminal') {
-          if (videoSource && video) {
-            video.style.display = 'block';
-            if (asciinemaEl) asciinemaEl.style.display = 'none';
-            videoSource.src = 'assets/demo-terminal.mp4';
-            video.load();
-            video.play().catch(initAsciinema);
-          } else {
-            initAsciinema();
-          }
-        } else if (target === 'github') {
-          if (asciinemaEl) asciinemaEl.style.display = 'none';
-          if (video && videoSource) {
-            video.style.display = 'block';
-            videoSource.src = 'assets/demo-github.mp4';
-            video.load();
-            video.play().catch(() => {});
-          }
-        } else if (target === 'gitlab') {
-          if (asciinemaEl) asciinemaEl.style.display = 'none';
-          if (video && videoSource) {
-            video.style.display = 'block';
-            videoSource.src = 'assets/demo-gitlab.mp4';
-            video.load();
-            video.play().catch(() => {});
-          }
-        }
-      });
-    });
-  })();
-</script>
 </body>
 </html>
